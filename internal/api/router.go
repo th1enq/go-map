@@ -33,7 +33,8 @@ func SetupNewRouter(db *db.DB) *gin.Engine {
 	{
 		location := api.Group("/location")
 		{
-			location.GET("/search", locationHandler.SearchActivitiesByLocation)
+			location.GET("/search/place", locationHandler.SearchLocationsByActivity)
+			location.GET("/search/activity", locationHandler.SearchActivitiesByLocation)
 		}
 	}
 
