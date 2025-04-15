@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenStreetMap Search</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+    <h1>Search Locations by Activity</h1>
+    <div>
+        <input id="lat" type="text" placeholder="Enter latitude" />
+        <input id="lng" type="text" placeholder="Enter longitude" />
+        <input id="activity" type="text" placeholder="Enter activity (e.g., cafe, park)" />
+        <button onclick="searchPlaces()">Search</button>
+    </div>
+    <div id="map" style="width: 100%; height: 500px;"></div>
+    <ul id="results"></ul>
+
+    <script>
+        const map = L.map('map').setView([10.762622, 106.660172], 14); // Default to Ho Chi Minh City
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+        }).addTo(map);
+
+        // Add a click event listener to the map
+    map.on('click', function (e) {
+        const lat = e.latlng.lat;
+        const lng = e.latlng.lng;
+
+        // Update the input fields with the clicked coordinates
+        document.getElementById("lat").value = lat.toFixed(6); // Limit to 6 decimal places
+        document.getElementById("lng").value = lng.toFixed(6);
+    });
+
+    async function searchPlaces() {
+        const lat = document.getElementById("lat").value;
+        const lng = document.getElementById("lng").value;
+        const activity = document.getElementById("activity").value;
+        const resultsList = document.getElementById("results");
+        resultsList.innerHTML = "";
+
+        if (!lat || !lng || !activity) {
+            alert("Please enter latitude, longitude, and activity");
+            return;
+        }
+
+        try {
+            // Send request to the API
+            const response = await fetch(`/api/search?lat=${lat}&lng=${lng}&activity=${activity}`);
+            const locations = await response.json();
+
+            if (locations.error) {
+                alert(locations.error);
+                return;
+            }
+
+            // Display results on the map and in the list
+            locations.forEach((location) => {
+                const li = document.createElement("li");
+                li.textContent = location.name;
+                resultsList.appendChild(li);
+
+                L.marker([location.latitude, location.longitude])
+                    .addTo(map)
+                    .bindPopup(location.name)
+                    .openPopup();
+            });
+        } catch (error) {
+            console.error("Error fetching locations:", error);
+            alert("An error occurred while fetching locations.");
+        }
+    }
+
+        async function searchPlaces() {
+            const lat = document.getElementById("lat").value;
+            const lng = document.getElementById("lng").value;
+            const activity = document.getElementById("activity").value;
+            const resultsList = document.getElementById("results");
+            resultsList.innerHTML = "";
+
+            if (!lat || !lng || !activity) {
+                alert("Please enter latitude, longitude, and activity");
+                return;
+            }
+
+            try {
+                // Send request to the API
+                const response = await fetch(`/api/search?lat=${lat}&lng=${lng}&activity=${activity}`);
+                const locations = await response.json();
+
+                if (locations.error) {
+                    alert(locations.error);
+                    return;
+                }
+
+                // Display results on the map and in the list
+                locations.forEach((location) => {
+                    const li = document.createElement("li");
+                    li.textContent = location.name;
+                    resultsList.appendChild(li);
+
+                    L.marker([location.latitude, location.longitude])
+                        .addTo(map)
+                        .bindPopup(location.name)
+                        .openPopup();
+                });
+            } catch (error) {
+                console.error("Error fetching locations:", error);
+                alert("An error occurred while fetching locations.");
+            }
+        }
+    </script>
+</body>
+</html>
