@@ -4,6 +4,6 @@ services:
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: map
+      POSTGRES_DB: go_map
     ports:
       - "5432:5432"
