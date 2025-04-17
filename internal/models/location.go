@@ -13,4 +13,5 @@ type Location struct {
 	Activities  datatypes.JSON `json:"activities"`
 	UserID      uint           `json:"user_id"`
 	VisitCount  int            `json:"visit_count"`
+	Category    string         `json:"category"`
 }

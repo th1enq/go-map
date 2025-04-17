@@ -7,18 +7,12 @@ import (
 
 type Activity struct {
 	gorm.Model
-	Name        string         `json:"name" gorm:"type:varchar(255);not null"`
-	Description string         `json:"description" gorm:"type:text"`
-	Categories  datatypes.JSON `json:"categories" gorm:"type:jsonb;default:'[]'"`
-}
-
-func (Activity) TableName() string {
-	return "activities"
-}
-
-func (a *Activity) BeforeSave(tx *gorm.DB) (err error) {
-	if string(a.Categories) == "" || string(a.Categories) == "null" {
-		a.Categories = datatypes.JSON([]byte("[]"))
-	}
-	return nil
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Categories  datatypes.JSON `json:"categories"`
+	Latitude    float64        `json:"latitude"`
+	Longitude   float64        `json:"longitude"`
+	Category    string         `json:"category"`
+	Tag         string         `json:"tag"`
+	Activities  []string       `json:"activities"`
 }

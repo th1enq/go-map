@@ -7,33 +7,99 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+        }
+        .container-fluid {
             padding: 20px;
         }
         .search-panel {
-            background: #f8f9fa;
+            background: #ffffff;
             padding: 20px;
             border-radius: 8px;
             margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .map-container {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            height: 600px; /* Fixed height for the container */
         }
         #map {
-            height: 500px;
+            height: 100%; /* Fill the container height */
             border-radius: 8px;
-            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            flex: 1;
         }
         .results-panel {
-            max-height: 400px;
+            width: 350px;
+            background: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            height: 100%; /* Fill the container height */
+        }
+        .results-header {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            background-color: #f8f9fa;
+            border-radius: 8px 8px 0 0;
+            flex-shrink: 0; /* Prevent header from shrinking */
+        }
+        .results-content {
+            flex: 1;
             overflow-y: auto;
+            padding: 0;
+            /* Customize scrollbar */
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e0 #f7fafc;
+        }
+        /* Webkit scrollbar styles */
+        .results-content::-webkit-scrollbar {
+            width: 8px;
+        }
+        .results-content::-webkit-scrollbar-track {
+            background: #f7fafc;
+            border-radius: 4px;
+        }
+        .results-content::-webkit-scrollbar-thumb {
+            background-color: #cbd5e0;
+            border-radius: 4px;
+            border: 2px solid #f7fafc;
+        }
+        .results-content::-webkit-scrollbar-thumb:hover {
+            background-color: #a0aec0;
         }
         .location-item {
-            padding: 10px;
-            border-bottom: 1px solid #dee2e6;
+            padding: 15px;
+            border-bottom: 1px solid #eee;
             cursor: pointer;
+            transition: background-color 0.2s;
         }
         .location-item:hover {
             background-color: #f8f9fa;
+        }
+        .location-item h5 {
+            margin: 0 0 5px 0;
+            font-size: 16px;
+            color: #333;
+        }
+        .location-item p {
+            margin: 0;
+            font-size: 14px;
+            color: #666;
+        }
+        .distance-badge {
+            display: inline-block;
+            background-color: #e9ecef;
+            color: #495057;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-top: 5px;
         }
         .category-select {
             margin-bottom: 15px;
@@ -48,6 +114,7 @@
             border-radius: 4px;
             z-index: 1000;
             display: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         .suggestion-item {
             padding: 8px 12px;
@@ -84,10 +151,31 @@
             font-size: 1.2rem;
             color: #333;
         }
+        .btn-primary {
+            background-color: #4a6bff;
+            border-color: #4a6bff;
+        }
+        .btn-primary:hover {
+            background-color: #3a5bef;
+            border-color: #3a5bef;
+        }
+        .btn-secondary {
+            background-color: #6c757d;
+            border-color: #6c757d;
+        }
+        .btn-secondary:hover {
+            background-color: #5a6268;
+            border-color: #545b62;
+        }
+        .no-results {
+            padding: 20px;
+            text-align: center;
+            color: #6c757d;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="container-fluid">
         <h1 class="mb-4">Location Search</h1>
         
         <div class="search-panel">
@@ -110,6 +198,7 @@
                             <option value="entertainment">Entertainment</option>
                             <option value="sport">Sport</option>
                             <option value="education">Education</option>
+                            <option value="will_go">Will Go</option>
                         </select>
                     </div>
                 </div>
@@ -120,11 +209,15 @@
             </div>
         </div>
 
-        <div id="map"></div>
-
-        <div class="results-panel">
-            <h3>Search Results</h3>
-            <div id="results" class="list-group"></div>
+        <div class="map-container">
+            <div id="map"></div>
+            
+            <div class="results-panel">
+                <div class="results-header">
+                    <h3 class="m-0">Search Results</h3>
+                </div>
+                <div id="results" class="results-content"></div>
+            </div>
         </div>
     </div>
 
@@ -147,6 +240,17 @@
         let searchTimeout = null;
         let currentLocationMarker = null;
         let selectedLocationMarker = null;
+        let currentRoute = null;
+
+        // Add gradient style for route
+        const routeStyle = {
+            color: '#4a6bff',
+            weight: 6,
+            opacity: 0.8,
+            dashArray: '10, 10',
+            lineCap: 'round',
+            lineJoin: 'round'
+        };
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
@@ -178,7 +282,8 @@
             // Add new selected location marker
             selectedLocationMarker = L.marker([lat, lng], { icon: selectedLocationIcon })
                 .addTo(map)
-                .bindPopup(name || 'Selected Location');
+                .bindPopup(name || 'Selected Location')
+                .openPopup();
         }
 
         // Function to show loading overlay
@@ -250,6 +355,8 @@
             const lat = e.latlng.lat;
             const lng = e.latlng.lng;
             
+            clearCurrentRoute(); // Clear current route when selecting new location
+            
             // Reverse geocode using Nominatim
             fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
                 .then(response => response.json())
@@ -277,6 +384,8 @@
         function getCurrentLocation() {
             if (navigator.geolocation) {
                 showLoading();
+                clearCurrentRoute(); // Clear current route when getting current location
+                
                 navigator.geolocation.getCurrentPosition(
                     function(position) {
                         const lat = position.coords.latitude;
@@ -335,6 +444,33 @@
             // Don't remove current location marker when clearing search results
         }
 
+        // Function to calculate distance between two points
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Radius of the earth in km
+            const dLat = deg2rad(lat2 - lat1);
+            const dLon = deg2rad(lon2 - lon1);
+            const a = 
+                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
+                Math.sin(dLon/2) * Math.sin(dLon/2); 
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+            const d = R * c; // Distance in km
+            return d;
+        }
+
+        function deg2rad(deg) {
+            return deg * (Math.PI/180);
+        }
+
+        // Add function to clear current route
+        function clearCurrentRoute() {
+            if (currentRoute) {
+                map.removeLayer(currentRoute);
+                currentRoute = null;
+            }
+        }
+
+        // Update searchPlaces function
         async function searchPlaces() {
             if (!selectedLocation) {
                 alert("Please select a location first");
@@ -348,7 +484,17 @@
             try {
                 showLoading();
                 clearMarkers();
-                const response = await fetch(`/api/location/search/place?lat=${selectedLocation.lat}&lng=${selectedLocation.lng}&activity=${category}`);
+                clearCurrentRoute(); // Clear current route when searching
+                
+                let response;
+                if (category === "will_go") {
+                    // Use SearchActivitiesByLocation for "Will Go" category
+                    response = await fetch(`/api/location/search/activity?lat=${selectedLocation.lat}&lng=${selectedLocation.lng}`);
+                } else {
+                    // Use regular search for other categories
+                    response = await fetch(`/api/location/search/place?lat=${selectedLocation.lat}&lng=${selectedLocation.lng}&activity=${category}`);
+                }
+                
                 const locations = await response.json();
 
                 if (locations.error) {
@@ -357,10 +503,35 @@
                     return;
                 }
 
-                locations.forEach((location) => {
+                // Calculate distance for each location and sort by distance
+                const locationsWithDistance = locations.map(location => {
+                    const distance = calculateDistance(
+                        selectedLocation.lat, 
+                        selectedLocation.lng, 
+                        location.latitude, 
+                        location.longitude
+                    );
+                    return {
+                        ...location,
+                        distance: distance
+                    };
+                }).sort((a, b) => a.distance - b.distance);
+
+                if (locationsWithDistance.length === 0) {
+                    resultsDiv.innerHTML = '<div class="no-results">No locations found</div>';
+                    hideLoading();
+                    return;
+                }
+
+                locationsWithDistance.forEach((location) => {
                     const marker = L.marker([location.latitude, location.longitude])
                         .addTo(map)
-                        .bindPopup(location.name);
+                        .bindPopup(`
+                            <strong>${location.name}</strong><br>
+                            ${location.category ? `Category: ${location.category}` : ''}<br>
+                            ${location.tag ? `Type: ${location.tag}` : ''}<br>
+                            ${location.activities ? `Activities: ${location.activities.join(', ')}` : ''}
+                        `);
                     markers.push(marker);
 
                     const resultItem = document.createElement("div");
@@ -368,16 +539,29 @@
                     resultItem.innerHTML = `
                         <h5>${location.name}</h5>
                         <p>Lat: ${location.latitude.toFixed(6)}, Lng: ${location.longitude.toFixed(6)}</p>
+                        ${location.category ? `<p class="mb-1"><small>Category: ${location.category}</small></p>` : ''}
+                        ${location.tag ? `<p class="mb-1"><small>Type: ${location.tag}</small></p>` : ''}
+                        ${location.activities ? `<p class="mb-1"><small>Activities: ${location.activities.join(', ')}</small></p>` : ''}
+                        <div class="distance-badge">${(location.distance * 1000).toFixed(0)}m</div>
                     `;
                     resultItem.onclick = () => {
-                        map.setView([location.latitude, location.longitude], 16);
+                        // Keep the current location centered and zoom in
+                        map.setView([selectedLocation.lat, selectedLocation.lng], 19);
                         marker.openPopup();
+                        
+                        // Explicitly clear current route before drawing a new one
+                        clearCurrentRoute();
+                        
+                        // Draw route from current location to selected point
+                        if (selectedLocation) {
+                            drawRoute(selectedLocation.lat, selectedLocation.lng, location.latitude, location.longitude);
+                        }
                     };
                     resultsDiv.appendChild(resultItem);
                 });
 
-                if (locations.length > 0) {
-                    const bounds = L.latLngBounds(locations.map(loc => [loc.latitude, loc.longitude]));
+                if (locationsWithDistance.length > 0) {
+                    const bounds = L.latLngBounds(locationsWithDistance.map(loc => [loc.latitude, loc.longitude]));
                     map.fitBounds(bounds, { padding: [50, 50] });
                 }
                 hideLoading();
@@ -387,6 +571,52 @@
                 alert("An error occurred while fetching locations.");
             }
         }
+
+        // Update the drawRoute function
+        async function drawRoute(fromLat, fromLng, toLat, toLng) {
+            // Remove existing route if any
+            if (currentRoute) {
+                map.removeLayer(currentRoute);
+            }
+
+            try {
+                // Get route from OSRM
+                const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson`);
+                const data = await response.json();
+
+                if (data.routes && data.routes.length > 0) {
+                    const route = data.routes[0];
+                    const routeCoordinates = route.geometry.coordinates.map(coord => [coord[1], coord[0]]);
+                    
+                    // Draw the route with the new style
+                    currentRoute = L.polyline(routeCoordinates, routeStyle).addTo(map);
+
+                    // Add route information to the map
+                    const distance = (route.distance / 1000).toFixed(1); // Convert to km
+                    const duration = Math.round(route.duration / 60); // Convert to minutes
+                    
+                    // Create a popup with route information
+                    const routeInfo = L.popup()
+                        .setLatLng([fromLat, fromLng])
+                        .setContent(`
+                            <div style="font-family: Arial, sans-serif;">
+                                <strong>Route Information:</strong><br>
+                                Distance: ${distance} km<br>
+                                Estimated time: ${duration} minutes<br>
+                                <small>(This is the shortest driving route)</small>
+                            </div>
+                        `)
+                        .openOn(map);
+                }
+            } catch (error) {
+                console.error('Error drawing route:', error);
+            }
+        }
+
+        // Update category select event listener
+        document.getElementById('category').addEventListener('change', function() {
+            clearCurrentRoute(); // Clear current route when changing category
+        });
     </script>
 </body>
 </html>
