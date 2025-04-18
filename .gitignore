@@ -1,5 +1,4 @@
 .vscode
-
-static/Geolife Trajectories 1.3
-
 .env
+db_data/
+dataset/

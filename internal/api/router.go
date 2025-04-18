@@ -19,15 +19,20 @@ func SetupNewRouter(db *db.DB) *gin.Engine {
 		c.HTML(http.StatusOK, "index.html", nil)
 	})
 
+	router.GET("/staypoints", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "staypoints.html", nil)
+	})
+
 	locationRepo := repositories.NewLocationRepository(db.DB)
 	// activityRepo := repositories.NewActivityRepository(db.DB)
 	// trajectoryRepo := repositories.NewTrajectoryRepository(db.DB)
-	// stayPointRepo := repositories.NewStayPointRepository(db.DB)
+	stayPointRepo := repositories.NewStayPointRepository(db.DB)
 	// userRepo := repositories.NewUserRepository(db.DB)
 
 	locationHandler := NewLocationHandler(locationRepo)
+	stayPointHandler := NewStayPointHandler(stayPointRepo)
 
-	// algorithms.LoadGeolifeData("static/Geolife Trajectories 1.3", userRepo, trajectoryRepo, stayPointRepo)
+	// algorithms.LoadGeolifeData("dataset/Geolife Trajectories 1.3", userRepo, trajectoryRepo, stayPointRepo)
 
 	api := router.Group("/api")
 	{
@@ -35,6 +40,11 @@ func SetupNewRouter(db *db.DB) *gin.Engine {
 		{
 			location.GET("/search/place", locationHandler.SearchLocationsByActivity)
 			location.GET("/search/activity", locationHandler.SearchActivitiesByLocation)
+		}
+
+		staypoint := api.Group("/staypoint")
+		{
+			staypoint.GET("/osm", stayPointHandler.GetStayPointsWithOSMInfo)
 		}
 	}
 

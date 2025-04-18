@@ -2,6 +2,8 @@ package repositories
 
 import (
 	"errors"
+	"math"
+	"time"
 
 	"github.com/th1enq/go-map/internal/models"
 	"gorm.io/gorm"
@@ -120,4 +122,86 @@ func (r *StayPointRepository) FindPopular(limit int) ([]models.StayPoint, error)
 	}
 
 	return staypoints, nil
+}
+
+// GroupNearbyStayPoints groups stay points that are close to each other in both space and time
+// distanceThreshold: maximum distance in meters between stay points to be considered the same location
+// timeThreshold: maximum time difference in hours between stay points to be considered the same location
+func (r *StayPointRepository) GroupNearbyStayPoints(userID uint, distanceThreshold float64, timeThreshold time.Duration) ([][]models.StayPoint, error) {
+	// Get all stay points for the user
+	stayPoints, err := r.GetByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(stayPoints) == 0 {
+		return nil, nil
+	}
+
+	// Sort stay points by arrival time
+	sortedStayPoints := make([]models.StayPoint, len(stayPoints))
+	copy(sortedStayPoints, stayPoints)
+
+	// Group nearby stay points
+	var groups [][]models.StayPoint
+	visited := make(map[uint]bool)
+
+	for i := 0; i < len(sortedStayPoints); i++ {
+		if visited[sortedStayPoints[i].ID] {
+			continue
+		}
+
+		// Start a new group with the current stay point
+		group := []models.StayPoint{sortedStayPoints[i]}
+		visited[sortedStayPoints[i].ID] = true
+
+		// Check other stay points
+		for j := i + 1; j < len(sortedStayPoints); j++ {
+			if visited[sortedStayPoints[j].ID] {
+				continue
+			}
+
+			// Calculate distance between stay points
+			distance := Distance(
+				sortedStayPoints[i].Latitude,
+				sortedStayPoints[i].Longitude,
+				sortedStayPoints[j].Latitude,
+				sortedStayPoints[j].Longitude,
+			) * 1000 // Convert to meters
+
+			// Calculate time difference
+			timeDiff := sortedStayPoints[j].ArrivalTime.Sub(sortedStayPoints[i].ArrivalTime)
+
+			// If stay points are close in both space and time, add to group
+			if distance <= distanceThreshold && timeDiff <= timeThreshold {
+				group = append(group, sortedStayPoints[j])
+				visited[sortedStayPoints[j].ID] = true
+			}
+		}
+
+		// Only add groups with more than one stay point
+		if len(group) > 1 {
+			groups = append(groups, group)
+		}
+	}
+
+	return groups, nil
+}
+
+// Distance calculates the distance between two points using the Haversine formula
+func Distance(lat1, lon1, lat2, lon2 float64) float64 {
+	const R = 6371 // Earth's radius in kilometers
+	lat1Rad := lat1 * (3.141592653589793 / 180)
+	lon1Rad := lon1 * (3.141592653589793 / 180)
+	lat2Rad := lat2 * (3.141592653589793 / 180)
+	lon2Rad := lon2 * (3.141592653589793 / 180)
+
+	dlat := lat2Rad - lat1Rad
+	dlon := lon2Rad - lon1Rad
+
+	a := (math.Sin(dlat/2) * math.Sin(dlat/2)) +
+		(math.Cos(lat1Rad) * math.Cos(lat2Rad) * math.Sin(dlon/2) * math.Sin(dlon/2))
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+
+	return R * c
 }
