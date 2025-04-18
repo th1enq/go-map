@@ -1,4 +1,4 @@
-package algorithms
+package services
 
 import (
 	"encoding/json"
@@ -9,22 +9,15 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/th1enq/go-map/internal/algorithms"
 	"github.com/th1enq/go-map/internal/models"
 )
 
-// OverpassResponse represents the response from Overpass API
-type OverpassResponse struct {
-	Elements []struct {
-		Type   string            `json:"type"`
-		ID     int64             `json:"id"`
-		Lat    float64           `json:"lat"`
-		Lon    float64           `json:"lon"`
-		Tags   map[string]string `json:"tags"`
-		Center struct {
-			Lat float64 `json:"lat"`
-			Lon float64 `json:"lon"`
-		} `json:"center"`
-	} `json:"elements"`
+type FindServices struct {
+}
+
+func NewFindServices() *FindServices {
+	return &FindServices{}
 }
 
 // filterLocationsByDistance filters locations within the specified radius
@@ -32,7 +25,7 @@ func filterLocationsByDistance(locations []models.Location, centerLat, centerLng
 	var filteredLocations []models.Location
 
 	for _, loc := range locations {
-		distance := Distance(centerLat, centerLng, loc.Latitude, loc.Longitude)
+		distance := algorithms.Distance(centerLat, centerLng, loc.Latitude, loc.Longitude)
 		if distance <= radiusKm {
 			filteredLocations = append(filteredLocations, loc)
 		}
@@ -41,8 +34,9 @@ func filterLocationsByDistance(locations []models.Location, centerLat, centerLng
 	return filteredLocations
 }
 
-func SearchLocationsByActivity(lat, lng float64, radiusKm float64, category string) ([]models.Location, error) {
+func (f *FindServices) SearchLocationsByActivity(lat, lng float64, radiusKm float64, category string) ([]models.Location, error) {
 	var locations []models.Location
+	seenLocations := make(map[string]bool) // To track unique locations
 
 	// Convert radius from km to meters (with some buffer to account for potential inaccuracies)
 	radiusMeters := int(radiusKm * 1100) // Add 10% buffer
@@ -65,8 +59,8 @@ func SearchLocationsByActivity(lat, lng float64, radiusKm float64, category stri
 		return nil, fmt.Errorf("invalid category: %s", category)
 	}
 
-	// Construct Overpass QL query
-	query := fmt.Sprintf(`
+	// First query: Search by OSM tags
+	tagQuery := fmt.Sprintf(`
 		[out:json][timeout:25];
 		(
 			node%s(around:%d,%f,%f);
@@ -80,67 +74,92 @@ func SearchLocationsByActivity(lat, lng float64, radiusKm float64, category stri
 		tagFilter, radiusMeters, lat, lng,
 		tagFilter, radiusMeters, lat, lng)
 
-	// Encode query for URL
-	encodedQuery := url.QueryEscape(query)
+	// Second query: Search by name containing the category
+	nameQuery := fmt.Sprintf(`
+		[out:json][timeout:25];
+		(
+			node["name"~"%s",i](around:%d,%f,%f);
+			way["name"~"%s",i](around:%d,%f,%f);
+			relation["name"~"%s",i](around:%d,%f,%f);
+		);
+		out body;
+		>;
+		out skel qt;
+	`, category, radiusMeters, lat, lng,
+		category, radiusMeters, lat, lng,
+		category, radiusMeters, lat, lng)
 
-	// Make request to Overpass API
-	resp, err := http.Get("https://overpass-api.de/api/interpreter?data=" + encodedQuery)
-	if err != nil {
-		return nil, fmt.Errorf("error fetching data: %v", err)
-	}
-	defer resp.Body.Close()
+	// Process both queries
+	queries := []string{tagQuery, nameQuery}
+	for _, query := range queries {
+		encodedQuery := url.QueryEscape(query)
+		resp, err := http.Get("https://overpass-api.de/api/interpreter?data=" + encodedQuery)
+		if err != nil {
+			return nil, fmt.Errorf("error fetching data: %v", err)
+		}
+		defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("error response: status code %d", resp.StatusCode)
-	}
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error reading response: %v", err)
-	}
-
-	var result OverpassResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("error parsing response: %v", err)
-	}
-
-	// Process results
-	for _, element := range result.Elements {
-		var locationLat, locationLon float64
-
-		// Get coordinates based on element type
-		if element.Type == "node" {
-			locationLat = element.Lat
-			locationLon = element.Lon
-		} else {
-			locationLat = element.Center.Lat
-			locationLon = element.Center.Lon
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("error response: status code %d", resp.StatusCode)
 		}
 
-		// Get name from tags
-		name := element.Tags["name"]
-
-		// Skip if no real name is available
-		if name == "" {
-			continue
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("error reading response: %v", err)
 		}
 
-		// Create location object with additional details
-		location := models.Location{
-			Name:      name,
-			Latitude:  locationLat,
-			Longitude: locationLon,
-			Category:  category,
+		var result models.OverpassResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return nil, fmt.Errorf("error parsing response: %v", err)
 		}
 
-		// Add description if available
-		if element.Tags["description"] != "" {
-			location.Description = element.Tags["description"]
-		} else if element.Tags["note"] != "" {
-			location.Description = element.Tags["note"]
-		}
+		// Process results
+		for _, element := range result.Elements {
+			var locationLat, locationLon float64
 
-		locations = append(locations, location)
+			// Get coordinates based on element type
+			if element.Type == "node" {
+				locationLat = element.Lat
+				locationLon = element.Lon
+			} else {
+				locationLat = element.Center.Lat
+				locationLon = element.Center.Lon
+			}
+
+			// Get name from tags
+			name := element.Tags["name"]
+
+			// Skip if no real name is available
+			if name == "" {
+				continue
+			}
+
+			// Create a unique key for the location
+			locationKey := fmt.Sprintf("%f,%f,%s", locationLat, locationLon, name)
+
+			// Skip if we've already seen this location
+			if seenLocations[locationKey] {
+				continue
+			}
+			seenLocations[locationKey] = true
+
+			// Create location object with additional details
+			location := models.Location{
+				Name:      name,
+				Latitude:  locationLat,
+				Longitude: locationLon,
+				Category:  category,
+			}
+
+			// Add description if available
+			if element.Tags["description"] != "" {
+				location.Description = element.Tags["description"]
+			} else if element.Tags["note"] != "" {
+				location.Description = element.Tags["note"]
+			}
+
+			locations = append(locations, location)
+		}
 	}
 
 	// Filter locations by exact distance
@@ -154,8 +173,9 @@ func SearchLocationsByActivity(lat, lng float64, radiusKm float64, category stri
 }
 
 // SearchActivitiesByLocation searches for activities near a location using Overpass API
-func SearchActivitiesByLocation(lat, lng float64, radiusKm float64) ([]models.Location, error) {
+func (f *FindServices) SearchActivitiesByLocation(lat, lng float64, radiusKm float64) ([]models.Location, error) {
 	var locations []models.Location
+	seenLocations := make(map[string]bool) // To track unique locations
 
 	// Convert radius from km to meters (with some buffer to account for potential inaccuracies)
 	radiusMeters := int(radiusKm * 1100) // Add 10% buffer
@@ -180,8 +200,8 @@ func SearchActivitiesByLocation(lat, lng float64, radiusKm float64) ([]models.Lo
 		go func(category, tagFilter string) {
 			defer wg.Done()
 
-			// Construct Overpass QL query
-			query := fmt.Sprintf(`
+			// First query: Search by OSM tags
+			tagQuery := fmt.Sprintf(`
 				[out:json][timeout:25];
 				(
 					node%s(around:%d,%f,%f);
@@ -195,71 +215,95 @@ func SearchActivitiesByLocation(lat, lng float64, radiusKm float64) ([]models.Lo
 				tagFilter, radiusMeters, lat, lng,
 				tagFilter, radiusMeters, lat, lng)
 
-			// Encode query for URL
-			encodedQuery := url.QueryEscape(query)
+			// Second query: Search by name containing the category
+			nameQuery := fmt.Sprintf(`
+				[out:json][timeout:25];
+				(
+					node["name"~"%s",i](around:%d,%f,%f);
+					way["name"~"%s",i](around:%d,%f,%f);
+					relation["name"~"%s",i](around:%d,%f,%f);
+				);
+				out body;
+				>;
+				out skel qt;
+			`, category, radiusMeters, lat, lng,
+				category, radiusMeters, lat, lng,
+				category, radiusMeters, lat, lng)
 
-			// Make request to Overpass API
-			resp, err := http.Get("https://overpass-api.de/api/interpreter?data=" + encodedQuery)
-			if err != nil {
-				errorChannel <- fmt.Errorf("error fetching data for category %s: %v", category, err)
-				return
-			}
-			defer resp.Body.Close()
+			// Process both queries
+			queries := []string{tagQuery, nameQuery}
+			for _, query := range queries {
+				encodedQuery := url.QueryEscape(query)
+				resp, err := http.Get("https://overpass-api.de/api/interpreter?data=" + encodedQuery)
+				if err != nil {
+					errorChannel <- fmt.Errorf("error fetching data for category %s: %v", category, err)
+					return
+				}
+				defer resp.Body.Close()
 
-			if resp.StatusCode != http.StatusOK {
-				errorChannel <- fmt.Errorf("error response for category %s: status code %d", category, resp.StatusCode)
-				return
-			}
-
-			body, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				errorChannel <- fmt.Errorf("error reading response for category %s: %v", category, err)
-				return
-			}
-
-			var result OverpassResponse
-			if err := json.Unmarshal(body, &result); err != nil {
-				errorChannel <- fmt.Errorf("error parsing response for category %s: %v", category, err)
-				return
-			}
-
-			// Process results
-			for _, element := range result.Elements {
-				var locationLat, locationLon float64
-
-				// Get coordinates based on element type
-				if element.Type == "node" {
-					locationLat = element.Lat
-					locationLon = element.Lon
-				} else {
-					locationLat = element.Center.Lat
-					locationLon = element.Center.Lon
+				if resp.StatusCode != http.StatusOK {
+					errorChannel <- fmt.Errorf("error response for category %s: status code %d", category, resp.StatusCode)
+					return
 				}
 
-				// Get name from tags
-				name := element.Tags["name"]
-
-				// Skip if no real name is available
-				if name == "" {
-					continue
+				body, err := ioutil.ReadAll(resp.Body)
+				if err != nil {
+					errorChannel <- fmt.Errorf("error reading response for category %s: %v", category, err)
+					return
 				}
 
-				// Create location object with additional details
-				location := models.Location{
-					Name:      name,
-					Latitude:  locationLat,
-					Longitude: locationLon,
-					Category:  category,
+				var result models.OverpassResponse
+				if err := json.Unmarshal(body, &result); err != nil {
+					errorChannel <- fmt.Errorf("error parsing response for category %s: %v", category, err)
+					return
 				}
 
-				// Add description if available
-				if element.Tags["description"] != "" {
-					location.Description = element.Tags["description"]
-				} else if element.Tags["note"] != "" {
-					location.Description = element.Tags["note"]
-				}
+				for _, element := range result.Elements {
+					var locationLat, locationLon float64
 
-				locationChannel <- location
+					// Get coordinates based on element type
+					if element.Type == "node" {
+						locationLat = element.Lat
+						locationLon = element.Lon
+					} else {
+						locationLat = element.Center.Lat
+						locationLon = element.Center.Lon
+					}
+
+					// Get name from tags
+					name := element.Tags["name"]
+
+					// Skip if no real name is available
+					if name == "" {
+						continue
+					}
+
+					// Create a unique key for the location
+					locationKey := fmt.Sprintf("%f,%f,%s", locationLat, locationLon, name)
+
+					// Skip if we've already seen this location
+					if seenLocations[locationKey] {
+						continue
+					}
+					seenLocations[locationKey] = true
+
+					// Create location object with additional details
+					location := models.Location{
+						Name:      name,
+						Latitude:  locationLat,
+						Longitude: locationLon,
+						Category:  category,
+					}
+
+					// Add description if available
+					if element.Tags["description"] != "" {
+						location.Description = element.Tags["description"]
+					} else if element.Tags["note"] != "" {
+						location.Description = element.Tags["note"]
+					}
+
+					locationChannel <- location
+				}
 			}
 		}(category, tagFilter)
 	}

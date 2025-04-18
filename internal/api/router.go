@@ -5,7 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/th1enq/go-map/internal/db"
-	"github.com/th1enq/go-map/internal/repositories"
+	"github.com/th1enq/go-map/internal/handlers"
+	"github.com/th1enq/go-map/internal/services"
 )
 
 func SetupNewRouter(db *db.DB) *gin.Engine {
@@ -23,14 +24,8 @@ func SetupNewRouter(db *db.DB) *gin.Engine {
 		c.HTML(http.StatusOK, "staypoints.html", nil)
 	})
 
-	locationRepo := repositories.NewLocationRepository(db.DB)
-	// activityRepo := repositories.NewActivityRepository(db.DB)
-	// trajectoryRepo := repositories.NewTrajectoryRepository(db.DB)
-	stayPointRepo := repositories.NewStayPointRepository(db.DB)
-	// userRepo := repositories.NewUserRepository(db.DB)
-
-	locationHandler := NewLocationHandler(locationRepo)
-	stayPointHandler := NewStayPointHandler(stayPointRepo)
+	findServices := services.NewFindServices()
+	findHandler := handlers.NewFindHandler(findServices)
 
 	// algorithms.LoadGeolifeData("dataset/Geolife Trajectories 1.3", userRepo, trajectoryRepo, stayPointRepo)
 
@@ -38,13 +33,8 @@ func SetupNewRouter(db *db.DB) *gin.Engine {
 	{
 		location := api.Group("/location")
 		{
-			location.GET("/search/place", locationHandler.SearchLocationsByActivity)
-			location.GET("/search/activity", locationHandler.SearchActivitiesByLocation)
-		}
-
-		staypoint := api.Group("/staypoint")
-		{
-			staypoint.GET("/osm", stayPointHandler.GetStayPointsWithOSMInfo)
+			location.GET("/search/place", findHandler.SearchLocationsByActivity)
+			location.GET("/search/activity", findHandler.SearchActivitiesByLocation)
 		}
 	}
 

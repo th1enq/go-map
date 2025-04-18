@@ -2,11 +2,10 @@ package models
 
 import (
 	"gorm.io/datatypes"
-	"gorm.io/gorm"
 )
 
 type Activity struct {
-	gorm.Model
+	ID          uint           `json:"id"`
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	Categories  datatypes.JSON `json:"categories"`

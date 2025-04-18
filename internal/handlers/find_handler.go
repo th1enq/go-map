@@ -1,25 +1,22 @@
-package api
+package handlers
 
 import (
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/th1enq/go-map/internal/algorithms"
-	"github.com/th1enq/go-map/internal/repositories"
+	"github.com/th1enq/go-map/internal/services"
 )
 
-type LocationHandler struct {
-	LocationRepositories *repositories.LocationRepository
+type FindHandler struct {
+	findServices *services.FindServices
 }
 
-func NewLocationHandler(locationRepo *repositories.LocationRepository) *LocationHandler {
-	return &LocationHandler{
-		LocationRepositories: locationRepo,
-	}
+func NewFindHandler(f *services.FindServices) *FindHandler {
+	return &FindHandler{findServices: f}
 }
 
-func (l *LocationHandler) SearchLocationsByActivity(c *gin.Context) {
+func (f *FindHandler) SearchLocationsByActivity(c *gin.Context) {
 	latStr := c.Query("lat")
 	lngStr := c.Query("lng")
 	activity := c.Query("activity")
@@ -42,7 +39,7 @@ func (l *LocationHandler) SearchLocationsByActivity(c *gin.Context) {
 	}
 
 	// Call the service
-	locations, err := algorithms.SearchLocationsByActivity(lat, lng, 0.2, activity)
+	locations, err := f.findServices.SearchLocationsByActivity(lat, lng, 0.2, activity)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -51,7 +48,7 @@ func (l *LocationHandler) SearchLocationsByActivity(c *gin.Context) {
 	c.JSON(http.StatusOK, locations)
 }
 
-func (l *LocationHandler) SearchActivitiesByLocation(c *gin.Context) {
+func (f *FindHandler) SearchActivitiesByLocation(c *gin.Context) {
 	latStr := c.Query("lat")
 	lngStr := c.Query("lng")
 
@@ -73,7 +70,7 @@ func (l *LocationHandler) SearchActivitiesByLocation(c *gin.Context) {
 	}
 
 	// Call the service
-	locations, err := algorithms.SearchActivitiesByLocation(lat, lng, 0.2)
+	locations, err := f.findServices.SearchActivitiesByLocation(lat, lng, 0.2)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
