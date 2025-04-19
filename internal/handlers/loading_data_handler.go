@@ -1,4 +1,4 @@
-package algorithms
+package handlers
 
 import (
 	"bufio"
@@ -10,17 +10,23 @@ import (
 	"strings"
 	"time"
 
+	"github.com/th1enq/go-map/internal/algorithms"
 	"github.com/th1enq/go-map/internal/models"
-	"github.com/th1enq/go-map/internal/repositories"
+	"github.com/th1enq/go-map/internal/services"
 	"gorm.io/datatypes"
 )
 
-func LoadGeolifeData(
-	dataDir string,
-	userRepo *repositories.UserRepository, // thêm userRepo
-	trajectoryRepo *repositories.TrajectoryRepository,
-	stayPointRepo *repositories.StayPointRepository,
-) error {
+type LoadingDataHandler struct {
+	*services.TrajectoryServices
+	*services.StayPointServices
+	*services.UserServices
+}
+
+func NewLoadingDataHandler(t *services.TrajectoryServices, s *services.StayPointServices, u *services.UserServices) *LoadingDataHandler {
+	return &LoadingDataHandler{t, s, u}
+}
+
+func (l *LoadingDataHandler) LoadGeolifeData(dataDir string) error {
 	// Kiểm tra thư mục dữ liệu
 	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
 		return fmt.Errorf("data directory not found: %s", dataDir)
@@ -39,12 +45,18 @@ func LoadGeolifeData(
 			continue
 		}
 		cnt++
+		if cnt == 2 {
+			break
+		}
 
 		userFolder := userDir.Name()
-
 		// Tạo hoặc tìm user tương ứng trong database
-		user, err := userRepo.FindOrCreateByFolder(userFolder)
+		user, err := l.UserServices.FindOrCreateByFolder(userFolder)
 		if err != nil {
+			if err.Error() == "user data already imported" {
+				fmt.Printf("Skipping user %s: data already imported\n", userFolder)
+				continue
+			}
 			fmt.Printf("Error getting user for folder %s: %v\n", userFolder, err)
 			continue
 		}
@@ -68,7 +80,7 @@ func LoadGeolifeData(
 			}
 
 			filePath := filepath.Join(trajectoryPath, file.Name())
-			err = processPLTFile(filePath, userID, trajectoryRepo, stayPointRepo)
+			err = l.processPLTFile(filePath, userID)
 			if err != nil {
 				fmt.Printf("Error processing file %s: %v\n", filePath, err)
 				continue
@@ -83,12 +95,7 @@ func LoadGeolifeData(
 }
 
 // Xử lý một file PLT
-func processPLTFile(
-	filePath string,
-	userID uint,
-	trajectoryRepo *repositories.TrajectoryRepository,
-	stayPointRepo *repositories.StayPointRepository,
-) error {
+func (l *LoadingDataHandler) processPLTFile(filePath string, userID uint) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return err
@@ -175,7 +182,7 @@ func processPLTFile(
 	}
 
 	// Lưu quỹ đạo vào database
-	trajectoryID, err := trajectoryRepo.Create(trajectory)
+	trajectoryID, err := l.TrajectoryServices.Create(trajectory)
 	if err != nil {
 		return err
 	}
@@ -184,7 +191,7 @@ func processPLTFile(
 	trajectory.ID = trajectoryID
 
 	// Phát hiện các điểm lưu trú
-	stayPoints := StayPointDetection(
+	stayPoints := algorithms.StayPointDetection(
 		trajectory,
 		200,            // 200m ngưỡng khoảng cách
 		30*time.Minute, // 30 phút ngưỡng thời gian
@@ -192,7 +199,7 @@ func processPLTFile(
 
 	// Lưu các điểm lưu trú vào DB
 	if len(stayPoints) > 0 {
-		err = stayPointRepo.BatchCreate(stayPoints)
+		err = l.StayPointServices.BatchCreate(stayPoints)
 		if err != nil {
 			fmt.Printf("Error saving stay points: %v\n", err)
 		}

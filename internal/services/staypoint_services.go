@@ -1,23 +1,24 @@
-package repositories
+package services
 
 import (
 	"errors"
-	"math"
 	"time"
 
+	"github.com/th1enq/go-map/internal/algorithms"
+	"github.com/th1enq/go-map/internal/db"
 	"github.com/th1enq/go-map/internal/models"
 	"gorm.io/gorm"
 )
 
-type StayPointRepository struct {
-	DB *gorm.DB
+type StayPointServices struct {
+	DB *db.DB
 }
 
-func NewStayPointRepository(db *gorm.DB) *StayPointRepository {
-	return &StayPointRepository{DB: db}
+func NewStayPointServices(db *db.DB) *StayPointServices {
+	return &StayPointServices{DB: db}
 }
 
-func (r *StayPointRepository) GetByUserID(userID uint) ([]models.StayPoint, error) {
+func (r *StayPointServices) GetByUserID(userID uint) ([]models.StayPoint, error) {
 	var staypoints []models.StayPoint
 	result := r.DB.Where("user_id = ?", userID).Find(&staypoints)
 	if result.Error != nil {
@@ -26,7 +27,7 @@ func (r *StayPointRepository) GetByUserID(userID uint) ([]models.StayPoint, erro
 	return staypoints, nil
 }
 
-func (r *StayPointRepository) GetByID(id uint) (*models.StayPoint, error) {
+func (r *StayPointServices) GetByID(id uint) (*models.StayPoint, error) {
 	var staypoint models.StayPoint
 	result := r.DB.First(&staypoint, id)
 	if result.Error != nil {
@@ -38,7 +39,7 @@ func (r *StayPointRepository) GetByID(id uint) (*models.StayPoint, error) {
 	return &staypoint, nil
 }
 
-func (r *StayPointRepository) GetByTrajectoryID(trajectoryID uint) ([]models.StayPoint, error) {
+func (r *StayPointServices) GetByTrajectoryID(trajectoryID uint) ([]models.StayPoint, error) {
 	var staypoints []models.StayPoint
 	result := r.DB.Where("trajectory_id = ?", trajectoryID).Find(&staypoints)
 	if result.Error != nil {
@@ -47,7 +48,7 @@ func (r *StayPointRepository) GetByTrajectoryID(trajectoryID uint) ([]models.Sta
 	return staypoints, nil
 }
 
-func (r *StayPointRepository) Create(staypoint models.StayPoint) (uint, error) {
+func (r *StayPointServices) Create(staypoint models.StayPoint) (uint, error) {
 	result := r.DB.Create(&staypoint)
 	if result.Error != nil {
 		return 0, result.Error
@@ -55,17 +56,17 @@ func (r *StayPointRepository) Create(staypoint models.StayPoint) (uint, error) {
 	return staypoint.ID, nil
 }
 
-func (r *StayPointRepository) Update(staypoint models.StayPoint) error {
+func (r *StayPointServices) Update(staypoint models.StayPoint) error {
 	result := r.DB.Save(&staypoint)
 	return result.Error
 }
 
-func (r *StayPointRepository) Delete(id uint) error {
+func (r *StayPointServices) Delete(id uint) error {
 	result := r.DB.Delete(&models.StayPoint{}, id)
 	return result.Error
 }
 
-func (r *StayPointRepository) BatchCreate(staypoints []models.StayPoint) error {
+func (r *StayPointServices) BatchCreate(staypoints []models.StayPoint) error {
 	return r.DB.Transaction(func(tx *gorm.DB) error {
 		for i := range staypoints {
 			if err := tx.Create(&staypoints[i]).Error; err != nil {
@@ -76,7 +77,7 @@ func (r *StayPointRepository) BatchCreate(staypoints []models.StayPoint) error {
 	})
 }
 
-func (r *StayPointRepository) FindNearby(lat, lng float64, radiusKm float64) ([]models.StayPoint, error) {
+func (r *StayPointServices) FindNearby(lat, lng float64, radiusKm float64) ([]models.StayPoint, error) {
 	var staypoints []models.StayPoint
 
 	result := r.DB.Raw(`
@@ -91,7 +92,7 @@ func (r *StayPointRepository) FindNearby(lat, lng float64, radiusKm float64) ([]
 	return staypoints, nil
 }
 
-func (r *StayPointRepository) FindPopular(limit int) ([]models.StayPoint, error) {
+func (r *StayPointServices) FindPopular(limit int) ([]models.StayPoint, error) {
 	var staypoints []models.StayPoint
 
 	result := r.DB.Raw(`
@@ -127,7 +128,7 @@ func (r *StayPointRepository) FindPopular(limit int) ([]models.StayPoint, error)
 // GroupNearbyStayPoints groups stay points that are close to each other in both space and time
 // distanceThreshold: maximum distance in meters between stay points to be considered the same location
 // timeThreshold: maximum time difference in hours between stay points to be considered the same location
-func (r *StayPointRepository) GroupNearbyStayPoints(userID uint, distanceThreshold float64, timeThreshold time.Duration) ([][]models.StayPoint, error) {
+func (r *StayPointServices) GroupNearbyStayPoints(userID uint, distanceThreshold float64, timeThreshold time.Duration) ([][]models.StayPoint, error) {
 	// Get all stay points for the user
 	stayPoints, err := r.GetByUserID(userID)
 	if err != nil {
@@ -162,7 +163,7 @@ func (r *StayPointRepository) GroupNearbyStayPoints(userID uint, distanceThresho
 			}
 
 			// Calculate distance between stay points
-			distance := Distance(
+			distance := algorithms.Distance(
 				sortedStayPoints[i].Latitude,
 				sortedStayPoints[i].Longitude,
 				sortedStayPoints[j].Latitude,
@@ -188,20 +189,11 @@ func (r *StayPointRepository) GroupNearbyStayPoints(userID uint, distanceThresho
 	return groups, nil
 }
 
-// Distance calculates the distance between two points using the Haversine formula
-func Distance(lat1, lon1, lat2, lon2 float64) float64 {
-	const R = 6371 // Earth's radius in kilometers
-	lat1Rad := lat1 * (3.141592653589793 / 180)
-	lon1Rad := lon1 * (3.141592653589793 / 180)
-	lat2Rad := lat2 * (3.141592653589793 / 180)
-	lon2Rad := lon2 * (3.141592653589793 / 180)
-
-	dlat := lat2Rad - lat1Rad
-	dlon := lon2Rad - lon1Rad
-
-	a := (math.Sin(dlat/2) * math.Sin(dlat/2)) +
-		(math.Cos(lat1Rad) * math.Cos(lat2Rad) * math.Sin(dlon/2) * math.Sin(dlon/2))
-	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
-
-	return R * c
+func (r *StayPointServices) GetAll() ([]models.StayPoint, error) {
+	var staypoints []models.StayPoint
+	result := r.DB.Find(&staypoints)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return staypoints, nil
 }

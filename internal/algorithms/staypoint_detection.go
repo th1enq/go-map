@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/th1enq/go-map/internal/models"
-	"gorm.io/datatypes"
 )
 
 func StayPointDetection(trajectory models.Trajectory, distThreshold float64, timeThreshold time.Duration) []models.StayPoint {
@@ -48,13 +47,12 @@ func StayPointDetection(trajectory models.Trajectory, distThreshold float64, tim
 					avgLng := sumLng / float64(j-i)
 
 					stayPoint := models.StayPoint{
-						UserID:       trajectory.UserID,
-						TrajectoryID: trajectory.ID,
-						Latitude:     avgLat,
-						Longitude:    avgLng,
-						ArrivalTime:  points[i].Timestamp,
-						LeaveTime:    points[j].Timestamp,
-						Activities:   datatypes.JSON([]byte("[]")),
+						UserID:        trajectory.UserID,
+						TrajectoryID:  trajectory.ID,
+						Latitude:      avgLat,
+						Longitude:     avgLng,
+						ArrivalTime:   points[i].Timestamp,
+						DepartureTime: points[j].Timestamp,
 					}
 
 					stayPoints = append(stayPoints, stayPoint)

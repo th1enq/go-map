@@ -148,7 +148,7 @@ func (f *FindServices) SearchLocationsByActivity(lat, lng float64, radiusKm floa
 				Name:      name,
 				Latitude:  locationLat,
 				Longitude: locationLon,
-				Category:  category,
+				Category:  models.LocationCategory(category),
 			}
 
 			// Add description if available
@@ -292,7 +292,7 @@ func (f *FindServices) SearchActivitiesByLocation(lat, lng float64, radiusKm flo
 						Name:      name,
 						Latitude:  locationLat,
 						Longitude: locationLon,
-						Category:  category,
+						Category:  models.LocationCategory(category),
 					}
 
 					// Add description if available

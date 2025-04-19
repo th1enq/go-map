@@ -25,9 +25,22 @@ func SetupNewRouter(db *db.DB) *gin.Engine {
 	})
 
 	findServices := services.NewFindServices()
-	findHandler := handlers.NewFindHandler(findServices)
+	recommendServices := services.NewRecommendServices(db)
 
-	// algorithms.LoadGeolifeData("dataset/Geolife Trajectories 1.3", userRepo, trajectoryRepo, stayPointRepo)
+	userServices := services.NewUserServices(db)
+	tracjectoryServices := services.NewTrajectoryServices(db)
+	stayPointServices := services.NewStayPointServices(db)
+
+	loadingDataHandler := handlers.NewLoadingDataHandler(tracjectoryServices, stayPointServices, userServices)
+	findHandler := handlers.NewFindHandler(findServices)
+	recommendHandler := handlers.NewRecommendHandler(recommendServices)
+
+	// Add hierarchical framework services and handler
+	frameworkService := services.NewHierarchicalFrameworkService(db.DB)
+	frameworkHandler := handlers.NewHierarchicalFrameworkHandler(frameworkService, stayPointServices)
+
+	loadingDataHandler.LoadGeolifeData("dataset/Geolife Trajectories 1.3")
+	frameworkHandler.BuildFramework()
 
 	api := router.Group("/api")
 	{
@@ -35,6 +48,9 @@ func SetupNewRouter(db *db.DB) *gin.Engine {
 		{
 			location.GET("/search/place", findHandler.SearchLocationsByActivity)
 			location.GET("/search/activity", findHandler.SearchActivitiesByLocation)
+
+			location.GET("/rcm/hot", recommendHandler.RecommendByHotStayPoint)
+			location.GET("/rcm/same", recommendHandler.RecommendBySameTracjectory)
 		}
 	}
 
