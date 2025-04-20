@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/th1enq/go-map/internal/algorithms"
@@ -129,7 +130,7 @@ func (r *StayPointServices) FindPopular(limit int) ([]models.StayPoint, error) {
 // distanceThreshold: maximum distance in meters between stay points to be considered the same location
 // timeThreshold: maximum time difference in hours between stay points to be considered the same location
 func (r *StayPointServices) GroupNearbyStayPoints(userID uint, distanceThreshold float64, timeThreshold time.Duration) ([][]models.StayPoint, error) {
-	// Get all stay points for the user
+	// Lấy tất cả stay points của user
 	stayPoints, err := r.GetByUserID(userID)
 	if err != nil {
 		return nil, err
@@ -139,11 +140,13 @@ func (r *StayPointServices) GroupNearbyStayPoints(userID uint, distanceThreshold
 		return nil, nil
 	}
 
-	// Sort stay points by arrival time
+	// Sắp xếp theo thời gian đến (ArrivalTime)
 	sortedStayPoints := make([]models.StayPoint, len(stayPoints))
 	copy(sortedStayPoints, stayPoints)
+	sort.Slice(sortedStayPoints, func(i, j int) bool {
+		return sortedStayPoints[i].ArrivalTime.Before(sortedStayPoints[j].ArrivalTime)
+	})
 
-	// Group nearby stay points
 	var groups [][]models.StayPoint
 	visited := make(map[uint]bool)
 
@@ -152,35 +155,39 @@ func (r *StayPointServices) GroupNearbyStayPoints(userID uint, distanceThreshold
 			continue
 		}
 
-		// Start a new group with the current stay point
+		// Tạo nhóm mới
 		group := []models.StayPoint{sortedStayPoints[i]}
 		visited[sortedStayPoints[i].ID] = true
 
-		// Check other stay points
+		// Duyệt các điểm tiếp theo
 		for j := i + 1; j < len(sortedStayPoints); j++ {
 			if visited[sortedStayPoints[j].ID] {
 				continue
 			}
 
-			// Calculate distance between stay points
+			last := group[len(group)-1] // so sánh với phần tử cuối trong group
+
+			// Tính khoảng cách (m -> km * 1000)
 			distance := algorithms.Distance(
-				sortedStayPoints[i].Latitude,
-				sortedStayPoints[i].Longitude,
+				last.Latitude,
+				last.Longitude,
 				sortedStayPoints[j].Latitude,
 				sortedStayPoints[j].Longitude,
-			) * 1000 // Convert to meters
+			) * 1000
 
-			// Calculate time difference
-			timeDiff := sortedStayPoints[j].ArrivalTime.Sub(sortedStayPoints[i].ArrivalTime)
+			// Tính độ lệch thời gian
+			timeDiff := sortedStayPoints[j].ArrivalTime.Sub(last.ArrivalTime)
 
-			// If stay points are close in both space and time, add to group
+			// Nếu gần nhau, thêm vào nhóm
 			if distance <= distanceThreshold && timeDiff <= timeThreshold {
 				group = append(group, sortedStayPoints[j])
 				visited[sortedStayPoints[j].ID] = true
+			} else {
+				// Nếu không còn gần nữa thì dừng (vì đã sort theo thời gian)
+				break
 			}
 		}
 
-		// Only add groups with more than one stay point
 		if len(group) > 1 {
 			groups = append(groups, group)
 		}

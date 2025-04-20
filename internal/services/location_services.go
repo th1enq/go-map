@@ -3,7 +3,6 @@ package services
 import (
 	"errors"
 
-	"github.com/th1enq/go-map/internal/algorithms"
 	"github.com/th1enq/go-map/internal/models"
 
 	"gorm.io/gorm"
@@ -15,68 +14,6 @@ type LocationServices struct {
 
 func NewLocationServices(db *gorm.DB) *LocationServices {
 	return &LocationServices{DB: db}
-}
-
-// ProcessSingleStayPoint processes a single staypoint and updates/create location
-func (s *LocationServices) ProcessSingleStayPoint(staypoint *models.StayPoint) error {
-	// Find nearby locations within eps distance
-	var nearbyLocations []models.Location
-	if err := s.DB.Where(
-		"ST_DWithin(geom, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, ?)",
-		staypoint.Longitude,
-		staypoint.Latitude,
-		0.2*1000, // Convert to meters
-	).Find(&nearbyLocations).Error; err != nil {
-		return err
-	}
-
-	if len(nearbyLocations) > 0 {
-		// If there are nearby locations, find the closest one
-		closestLocation := nearbyLocations[0]
-		minDist := algorithms.Distance(staypoint.Latitude, staypoint.Longitude, closestLocation.Latitude, closestLocation.Longitude)
-
-		for _, loc := range nearbyLocations[1:] {
-			dist := algorithms.Distance(staypoint.Latitude, staypoint.Longitude, loc.Latitude, loc.Longitude)
-			if dist < minDist {
-				minDist = dist
-				closestLocation = loc
-			}
-		}
-
-		// Update the closest location
-		closestLocation.VisitCount++
-		if staypoint.ArrivalTime.Before(closestLocation.FirstVisit) {
-			closestLocation.FirstVisit = staypoint.ArrivalTime
-		}
-		if staypoint.DepartureTime.After(closestLocation.LastVisit) {
-			closestLocation.LastVisit = staypoint.DepartureTime
-		}
-
-		if err := s.DB.Save(&closestLocation).Error; err != nil {
-			return err
-		}
-
-		// Link staypoint to location
-		staypoint.LocationID = closestLocation.ID
-		return s.DB.Save(staypoint).Error
-	}
-
-	// If no nearby locations found, create a new one
-	newLocation := models.Location{
-		Latitude:   staypoint.Latitude,
-		Longitude:  staypoint.Longitude,
-		VisitCount: 1,
-		FirstVisit: staypoint.ArrivalTime,
-		LastVisit:  staypoint.DepartureTime,
-	}
-
-	if err := s.DB.Create(&newLocation).Error; err != nil {
-		return err
-	}
-
-	// Link staypoint to new location
-	staypoint.LocationID = newLocation.ID
-	return s.DB.Save(staypoint).Error
 }
 
 func (r *LocationServices) GetAll() ([]models.Location, error) {

@@ -20,27 +20,37 @@ func SetupNewRouter(db *db.DB) *gin.Engine {
 		c.HTML(http.StatusOK, "index.html", nil)
 	})
 
-	router.GET("/staypoints", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "staypoints.html", nil)
+	router.GET("/search", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "search.html", nil)
+	})
+
+	router.GET("/recommend", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "recommend.html", nil)
 	})
 
 	findServices := services.NewFindServices()
-	recommendServices := services.NewRecommendServices(db)
 
-	userServices := services.NewUserServices(db)
-	tracjectoryServices := services.NewTrajectoryServices(db)
+	// userServices := services.NewUserServices(db)
+	// tracjectoryServices := services.NewTrajectoryServices(db)
 	stayPointServices := services.NewStayPointServices(db)
+	locationServices := services.NewLocationServices(db.DB)
 
-	loadingDataHandler := handlers.NewLoadingDataHandler(tracjectoryServices, stayPointServices, userServices)
-	findHandler := handlers.NewFindHandler(findServices)
-	recommendHandler := handlers.NewRecommendHandler(recommendServices)
+	// loadingDataHandler := handlers.NewLoadingDataHandler(tracjectoryServices, stayPointServices, userServices)
 
-	// Add hierarchical framework services and handler
+	// // Add hierarchical framework services and handler
 	frameworkService := services.NewHierarchicalFrameworkService(db.DB)
-	frameworkHandler := handlers.NewHierarchicalFrameworkHandler(frameworkService, stayPointServices)
+	similarityService := services.NewSimilarityService(db, frameworkService)
+	// userGraphHandler := handlers.NewUserGraphHandler(frameworkService, stayPointServices)
+	// frameworkHandler := handlers.NewHierarchicalFrameworkHandler(frameworkService, stayPointServices, locationServices)
 
-	loadingDataHandler.LoadGeolifeData("dataset/Geolife Trajectories 1.3")
-	frameworkHandler.BuildFramework()
+	// loadingDataHandler.LoadGeolifeData("dataset/Geolife Trajectories 1.3")
+	// frameworkHandler.BuildFramework()
+	// for i := 1; i <= 182; i++ {
+	// 	userGraphHandler.BuildUserGraph(uint(i))
+	// }
+	findHandler := handlers.NewFindHandler(findServices)
+	recommendationService := services.NewRecommendationService(db, similarityService, frameworkService, stayPointServices, locationServices)
+	recommendationHandler := handlers.NewRecommendHandler(recommendationService)
 
 	api := router.Group("/api")
 	{
@@ -49,8 +59,8 @@ func SetupNewRouter(db *db.DB) *gin.Engine {
 			location.GET("/search/place", findHandler.SearchLocationsByActivity)
 			location.GET("/search/activity", findHandler.SearchActivitiesByLocation)
 
-			location.GET("/rcm/hot", recommendHandler.RecommendByHotStayPoint)
-			location.GET("/rcm/same", recommendHandler.RecommendBySameTracjectory)
+			location.GET("/rcm/hot", recommendationHandler.RecommendByHotStayPoint)
+			location.GET("/rcm/same/:id", recommendationHandler.RecommendBySameTracjectory)
 		}
 	}
 

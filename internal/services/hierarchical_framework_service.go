@@ -53,7 +53,7 @@ func (s *HierarchicalFrameworkService) CreateLayer(frameworkID uint, level int) 
 }
 
 // CreateCluster creates a new cluster in a layer
-func (s *HierarchicalFrameworkService) CreateCluster(layerID uint, centerLat, centerLng, radius float64) (*models.Cluster, error) {
+func (s *HierarchicalFrameworkService) CreateCluster(layerID uint, centerLat, centerLng, radius float64, visitCount int) (*models.Cluster, error) {
 	// Get the layer to find the framework ID
 	var layer models.Layer
 	if err := s.db.First(&layer, layerID).Error; err != nil {
@@ -68,6 +68,7 @@ func (s *HierarchicalFrameworkService) CreateCluster(layerID uint, centerLat, ce
 		Radius:      radius,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
+		VisitCount:  visitCount,
 	}
 	if err := s.db.Create(cluster).Error; err != nil {
 		return nil, err
@@ -218,4 +219,31 @@ func (s *HierarchicalFrameworkService) GetCluster(id uint) (*models.Cluster, err
 		return nil, err
 	}
 	return &cluster, nil
+}
+
+// GetAllFrameworks retrieves all hierarchical frameworks
+func (s *HierarchicalFrameworkService) GetAllFrameworks() ([]models.HierarchicalFramework, error) {
+	var frameworks []models.HierarchicalFramework
+	if err := s.db.Preload("Layers.Clusters").Find(&frameworks).Error; err != nil {
+		return nil, err
+	}
+	return frameworks, nil
+}
+
+// UpdateNode updates a node in the graph
+func (s *HierarchicalFrameworkService) UpdateNode(node *models.GraphNode) error {
+	return s.db.Save(node).Error
+}
+
+// GetGraphNodes retrieves all nodes in a graph
+func (s *HierarchicalFrameworkService) GetGraphNodes(graphID uint) ([]models.GraphNode, error) {
+	var nodes []models.GraphNode
+	if err := s.db.Where("graph_id = ?", graphID).Find(&nodes).Error; err != nil {
+		return nil, err
+	}
+	return nodes, nil
+}
+
+func (s *HierarchicalFrameworkService) GetDB() *gorm.DB {
+	return s.db
 }

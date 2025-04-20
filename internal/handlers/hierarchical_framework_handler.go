@@ -7,21 +7,25 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/th1enq/go-map/internal/algorithms"
+	"github.com/th1enq/go-map/internal/models"
 	"github.com/th1enq/go-map/internal/services"
 )
 
 type HierarchicalFrameworkHandler struct {
 	frameworkService *services.HierarchicalFrameworkService
 	stayPointService *services.StayPointServices
+	locationServices *services.LocationServices
 }
 
 func NewHierarchicalFrameworkHandler(
 	frameworkService *services.HierarchicalFrameworkService,
 	stayPointService *services.StayPointServices,
+	locationServices *services.LocationServices,
 ) *HierarchicalFrameworkHandler {
 	return &HierarchicalFrameworkHandler{
 		frameworkService: frameworkService,
 		stayPointService: stayPointService,
+		locationServices: locationServices,
 	}
 }
 
@@ -41,7 +45,7 @@ func (h *HierarchicalFrameworkHandler) BuildFramework() {
 
 	// Define clustering parameters
 	params := algorithms.HierarchicalClusteringParams{
-		Epsilon:     0.2, // 200 meters
+		Epsilon:     0.1, // 200 meters
 		MinPoints:   2,
 		MaxLayers:   3,
 		LayerScales: []float64{1.0, 2.0, 4.0}, // Each layer has double the scale of the previous
@@ -67,7 +71,7 @@ func (h *HierarchicalFrameworkHandler) BuildFramework() {
 	}
 
 	// Save layers and clusters
-	for _, layer := range framework.Layers {
+	for i, layer := range framework.Layers {
 		// Create layer
 		dbLayer, err := h.frameworkService.CreateLayer(dbFramework.ID, layer.Level)
 		if err != nil {
@@ -77,10 +81,26 @@ func (h *HierarchicalFrameworkHandler) BuildFramework() {
 
 		// Create clusters in the layer
 		for _, cluster := range layer.Clusters {
-			_, err := h.frameworkService.CreateCluster(dbLayer.ID, cluster.CenterLat, cluster.CenterLng, cluster.Radius)
+			value, err := h.frameworkService.CreateCluster(dbLayer.ID, cluster.CenterLat, cluster.CenterLng, cluster.Radius, cluster.VisitCount)
 			if err != nil {
 				log.Fatalf("failed to create cluster: %v", err)
 				return
+			}
+
+			if i == 0 {
+				// Create new location
+				newLocation := models.Location{
+					Latitude:   value.CenterLat,
+					Longitude:  value.CenterLng,
+					ClusterID:  value.ID,
+					VisitCount: value.VisitCount,
+				}
+
+				// Save to database
+				_, err := h.locationServices.Create(newLocation)
+				if err != nil {
+					continue
+				}
 			}
 		}
 	}

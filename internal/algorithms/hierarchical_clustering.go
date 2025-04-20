@@ -44,6 +44,7 @@ func BuildHierarchicalFramework(stayPoints []models.StayPoint, params Hierarchic
 		for j, sp := range stayPoints {
 			points[j] = Point{
 				ID:          sp.ID,
+				UserID:      sp.UserID,
 				Latitude:    sp.Latitude,
 				Longitude:   sp.Longitude,
 				ArrivalTime: sp.ArrivalTime,
@@ -55,7 +56,7 @@ func BuildHierarchicalFramework(stayPoints []models.StayPoint, params Hierarchic
 		dbscanParams := DBSCANParams{
 			Epsilon:     layerEpsilon,
 			MinPoints:   layerMinPoints,
-			MaxClusters: 0, // No limit on number of clusters
+			MaxClusters: params.MaxLayers,
 		}
 
 		clusters := dbscan(points, dbscanParams)
@@ -63,16 +64,20 @@ func BuildHierarchicalFramework(stayPoints []models.StayPoint, params Hierarchic
 		// Convert clusters to database models
 		for _, cluster := range clusters {
 			// Calculate cluster center and radius
-			centerLat, centerLng, radius := calculateClusterMetrics(cluster.Points)
+			centerLat, centerLng, radius, visitCount := calculateClusterMetrics(cluster.Points)
 
-			// Create cluster in the layer
-			layer.Clusters = append(layer.Clusters, models.Cluster{
-				CenterLat: centerLat,
-				CenterLng: centerLng,
-				Radius:    radius,
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
-			})
+			if visitCount > 0 {
+
+				// Create cluster in the layer
+				layer.Clusters = append(layer.Clusters, models.Cluster{
+					CenterLat:  centerLat,
+					CenterLng:  centerLng,
+					Radius:     radius,
+					CreatedAt:  time.Now(),
+					UpdatedAt:  time.Now(),
+					VisitCount: visitCount,
+				})
+			}
 		}
 
 		framework.Layers = append(framework.Layers, *layer)

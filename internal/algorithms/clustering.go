@@ -2,12 +2,10 @@ package algorithms
 
 import (
 	"time"
-
-	"github.com/th1enq/go-map/internal/models"
 )
 
 // DBSCANParams holds parameters for the DBSCAN algorithm
-type 	  DBSCANParams struct {
+type DBSCANParams struct {
 	Epsilon     float64 // Maximum distance between points to be considered neighbors
 	MinPoints   int     // Minimum number of points to form a cluster
 	MaxClusters int     // Maximum number of clusters to create
@@ -16,6 +14,7 @@ type 	  DBSCANParams struct {
 // Point represents a geographical point with additional metadata
 type Point struct {
 	ID          uint
+	UserID      uint
 	Latitude    float64
 	Longitude   float64
 	ArrivalTime time.Time
@@ -28,45 +27,6 @@ type Point struct {
 type Cluster struct {
 	ID     int
 	Points []Point
-}
-
-// ClusterStayPoints performs density-based clustering on stay points
-func ClusterStayPoints(stayPoints []models.StayPoint, params DBSCANParams) ([]models.Cluster, error) {
-	if len(stayPoints) == 0 {
-		return nil, nil
-	}
-
-	// Convert stay points to points for clustering
-	points := make([]Point, len(stayPoints))
-	for i, sp := range stayPoints {
-		points[i] = Point{
-			ID:          sp.ID,
-			Latitude:    sp.Latitude,
-			Longitude:   sp.Longitude,
-			ArrivalTime: sp.ArrivalTime,
-			LeaveTime:   sp.DepartureTime,
-		}
-	}
-
-	// Perform DBSCAN clustering
-	clusters := dbscan(points, params)
-
-	// Convert clusters to database models
-	var dbClusters []models.Cluster
-	for _, cluster := range clusters {
-		// Calculate cluster center and radius
-		centerLat, centerLng, radius := calculateClusterMetrics(cluster.Points)
-
-		dbCluster := models.Cluster{
-			CenterLat: centerLat,
-			CenterLng: centerLng,
-			Radius:    radius,
-		}
-
-		dbClusters = append(dbClusters, dbCluster)
-	}
-
-	return dbClusters, nil
 }
 
 // dbscan implements the DBSCAN clustering algorithm
@@ -151,19 +111,25 @@ func createCluster(points []Point, clusterID int) Cluster {
 }
 
 // calculateClusterMetrics calculates the center and radius of a cluster
-func calculateClusterMetrics(points []Point) (centerLat, centerLng, radius float64) {
+func calculateClusterMetrics(points []Point) (centerLat, centerLng, radius float64, visitCount int) {
 	if len(points) == 0 {
-		return 0, 0, 0
+		return 0, 0, 0, 0
 	}
 
 	// Calculate center
 	var sumLat, sumLng float64
+	userIDSet := make(map[uint]bool)
+
 	for _, point := range points {
 		sumLat += point.Latitude
 		sumLng += point.Longitude
+		userIDSet[point.UserID] = true
 	}
 	centerLat = sumLat / float64(len(points))
 	centerLng = sumLng / float64(len(points))
+
+	// Calculate visitCount (unique user IDs)
+	visitCount = len(userIDSet)
 
 	// Calculate radius (maximum distance from center to any point)
 	var maxDistance float64
@@ -174,5 +140,5 @@ func calculateClusterMetrics(points []Point) (centerLat, centerLng, radius float
 		}
 	}
 
-	return centerLat, centerLng, maxDistance
+	return centerLat, centerLng, maxDistance, visitCount
 }

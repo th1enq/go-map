@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:latest
+    image: postgis/postgis:16-master
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password

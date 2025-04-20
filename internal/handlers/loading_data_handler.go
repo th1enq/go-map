@@ -38,16 +38,17 @@ func (l *LoadingDataHandler) LoadGeolifeData(dataDir string) error {
 		return fmt.Errorf("error reading Data directory: %w", err)
 	}
 
-	cnt := 0
+	// cnt := 0
 
 	for _, userDir := range userDirs {
 		if !userDir.IsDir() {
 			continue
 		}
-		cnt++
-		if cnt == 2 {
-			break
-		}
+
+		// cnt++
+		// if cnt == 2 {
+		// 	break
+		// }
 
 		userFolder := userDir.Name()
 		// Tạo hoặc tìm user tương ứng trong database
@@ -85,9 +86,6 @@ func (l *LoadingDataHandler) LoadGeolifeData(dataDir string) error {
 				fmt.Printf("Error processing file %s: %v\n", filePath, err)
 				continue
 			}
-		}
-		if cnt == 1 {
-			break
 		}
 	}
 

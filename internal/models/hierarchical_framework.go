@@ -43,14 +43,13 @@ type HierarchicalGraph struct {
 	FrameworkID uint        `json:"framework_id"`
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
-	Nodes       []GraphNode `json:"nodes"`
-	Edges       []GraphEdge `json:"edges"`
+	Nodes       []GraphNode `json:"nodes" gorm:"foreignKey:GraphID;references:ID"`
+	Edges       []GraphEdge `json:"edges" gorm:"foreignKey:GraphID;references:ID"`
 }
 
-// GraphNode represents a node in a user's hierarchical graph
 type GraphNode struct {
 	ID           uint      `json:"id"`
-	GraphID      uint      `json:"graph_id"`
+	GraphID      uint      `json:"graph_id" gorm:"index"`
 	ClusterID    uint      `json:"cluster_id"`
 	VisitCount   int       `json:"visit_count"`
 	FirstVisitAt time.Time `json:"first_visit_at"`
