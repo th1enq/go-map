@@ -5,6 +5,7 @@ import (
 
 	"github.com/th1enq/go-map/internal/db"
 	"github.com/th1enq/go-map/internal/models"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -18,7 +19,7 @@ func NewUserServices(db *db.DB) *UserServices {
 	}
 }
 
-func (r *UserServices) GetByID(id uint) (*models.User, error) {
+func (r *UserServices) GetUserByID(id uint) (*models.User, error) {
 	var user models.User
 	if err := r.DB.First(&user, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -106,4 +107,41 @@ func (r *UserServices) Count() (int64, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+// Các hàm bổ sung cho admin
+func (s *UserServices) GetAllUsers() ([]models.User, error) {
+	var users []models.User
+	err := s.DB.Find(&users).Error
+	if err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
+func (s *UserServices) UpdateUser(user *models.User) error {
+	return s.DB.Save(user).Error
+}
+
+func (s *UserServices) DeleteUser(id uint) error {
+	return s.DB.Delete(&models.User{}, id).Error
+}
+
+func (s *UserServices) GetUserCount() (int64, error) {
+	var count int64
+	err := s.DB.Model(&models.User{}).Count(&count).Error
+	return count, err
+}
+
+func (s *UserServices) UpdateUserPassword(userID uint, newPassword string) error {
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	return s.DB.Model(&models.User{}).Where("id = ?", userID).Update("password", string(hashedPassword)).Error
+}
+
+func (s *UserServices) SetUserRole(userID uint, role string) error {
+	return s.DB.Model(&models.User{}).Where("id = ?", userID).Update("role", role).Error
 }

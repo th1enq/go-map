@@ -26,7 +26,7 @@ func main() {
 		log.Fatalf("failed to load database: %v", err)
 	}
 
-	router := api.SetupNewRouter(db)
+	router := api.SetupNewRouter(db, cfg.JWTSecret)
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Server.Port,

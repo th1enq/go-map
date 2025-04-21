@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -68,6 +69,8 @@ func (f *FindHandler) SearchActivitiesByLocation(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid longitude"})
 		return
 	}
+
+	log.Println(lat, lng)
 
 	// Call the service
 	locations, err := f.findServices.SearchActivitiesByLocation(lat, lng, 0.2)

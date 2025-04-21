@@ -8,8 +8,9 @@ import (
 )
 
 type Config struct {
-	Server ServerConfig
-	DB     DBConfig
+	Server    ServerConfig
+	DB        DBConfig
+	JWTSecret string `env:"JWT_SECRET,required"`
 }
 
 type ServerConfig struct {

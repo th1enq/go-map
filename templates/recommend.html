@@ -9,6 +9,36 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
+    <!-- Navigation Bar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="/">Go Map</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+                aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/search">Search</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" aria-current="page" href="/recommend">Recommendations</a>
+                    </li>
+                    <li class="nav-item" id="admin-nav-item" style="display: none;">
+                        <a class="nav-link" href="/admin">Admin</a>
+                    </li>
+                </ul>
+                <div class="d-flex">
+                    <button id="logout-btn" class="btn btn-light">Logout</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
     <div class="container-fluid">
         <h1 class="mb-4">Smart Recommendation</h1>
         
@@ -27,6 +57,7 @@
             <div class="d-flex gap-2">
                 <button class="btn btn-primary" id="search-button">Search</button>
                 <button class="btn btn-secondary" id="current-location-button">Use Current Location</button>
+                <button class="btn btn-success" id="similar-trajectories-button">Recommendations For You</button>
             </div>
         </div>
 

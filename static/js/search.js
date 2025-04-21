@@ -4,6 +4,11 @@ let searchMap = null; // Changed from recommendMap to searchMap
 let searchInput;
 let suggestionsDiv;
 
+// Function to get the JWT token from localStorage
+function getAuthToken() {
+    return localStorage.getItem('token');
+}
+
 // Function to show loading overlay
 function showLoading() {
     const loadingOverlay = document.getElementById('loading-overlay');
@@ -17,6 +22,49 @@ function hideLoading() {
     const loadingOverlay = document.getElementById('loading-overlay');
     if (loadingOverlay) {
         loadingOverlay.style.display = 'none';
+    }
+}
+
+// Function to check if user is logged in
+function checkAuth() {
+    const token = getAuthToken();
+    if (!token) {
+        window.location.href = '/login';
+        return false;
+    }
+    return true;
+}
+
+// Function to display admin tab if user has admin role
+function checkAdminRole() {
+    const userJson = localStorage.getItem('user');
+    if (userJson) {
+        try {
+            const user = JSON.parse(userJson);
+            if (user.role === 'admin') {
+                const adminNavItem = document.getElementById('admin-nav-item');
+                if (adminNavItem) {
+                    adminNavItem.style.display = 'block';
+                }
+            }
+        } catch (e) {
+            console.error('Error parsing user data:', e);
+        }
+    }
+}
+
+// Handle logout
+function setupLogout() {
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', function() {
+            // Clear localStorage
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            
+            // Redirect to login page
+            window.location.href = '/login';
+        });
     }
 }
 
@@ -136,7 +184,7 @@ function initMap() {
         
         console.log('Initializing new map');
         // Initialize new map
-        const newMap = L.map('map').setView([10.762622, 106.660172], 13);
+        const newMap = L.map('map').setView([10.762622, 106.660172], 18);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors'
         }).addTo(newMap);
@@ -150,6 +198,15 @@ function initMap() {
 
 // Initialize map and attach listeners when document is ready
 document.addEventListener('DOMContentLoaded', function() {
+    // Check authentication
+    if (!checkAuth()) return;
+    
+    // Check admin role for UI visibility
+    checkAdminRole();
+    
+    // Setup logout functionality
+    setupLogout();
+    
     // Initialize location search elements
     searchInput = document.getElementById('location-search');
     suggestionsDiv = document.getElementById('search-suggestions');
@@ -187,7 +244,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 searchInput.value = place.display_name;
                                 suggestionsDiv.style.display = 'none';
                                 if (searchMap) {
-                                    searchMap.setView([selectedLocation.lat, selectedLocation.lng], 14);
+                                    searchMap.setView([selectedLocation.lat, selectedLocation.lng], 18);
                                     
                                     // Create a custom marker icon for selected location
                                     const selectedLocationIcon = L.divIcon({
@@ -250,7 +307,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Add event listener for search button
         const searchBtn = document.getElementById('search-button');
         if (searchBtn) {
-            searchBtn.addEventListener('click', recommendMostPopular);
+            searchBtn.addEventListener('click', SearchPlaces);
         }
         
         // Set up map click handler
@@ -374,7 +431,7 @@ function getCurrentLocation() {
                             name: data.display_name
                         };
                         searchInput.value = data.display_name;
-                        searchMap.setView([lat, lng], 15); // Zoom closer
+                        searchMap.setView([lat, lng], 18); // Zoom closer
                         
                         // Add a proper selected location marker
                         const selectedLocationIcon = L.divIcon({
@@ -405,7 +462,7 @@ function getCurrentLocation() {
                             name: `Vị trí (${lat.toFixed(6)}, ${lng.toFixed(6)})`
                         };
                         searchInput.value = selectedLocation.name;
-                        searchMap.setView([lat, lng], 15);
+                        searchMap.setView([lat, lng], 18);
                         
                         // Still add a marker even if geocoding fails
                         const selectedLocationIcon = L.divIcon({
@@ -444,7 +501,7 @@ function getCurrentLocation() {
     }
 }
 
-async function recommendMostPopular() {
+async function SearchPlaces() {
     if (!searchMap) {
         console.error('Map not initialized yet');
         alert('Bản đồ chưa được khởi tạo. Vui lòng thử lại sau.');
@@ -456,8 +513,16 @@ async function recommendMostPopular() {
         return;
     }
 
+    // Get auth token
+    const token = getAuthToken();
+    if (!token) {
+        // Redirect to login page if not authenticated
+        window.location.href = '/login';
+        return;
+    }
+
     // Look for either "search-results" or "results" element
-    const resultsDiv = document.getElementById("search-results") || document.getElementById("results");
+    const resultsDiv = document.getElementById("search-results")
     if (!resultsDiv) {
         console.error("Results container not found");
         alert("Không tìm thấy khung hiển thị kết quả. Vui lòng kiểm tra cấu trúc HTML.");
@@ -483,7 +548,20 @@ async function recommendMostPopular() {
         }
         
         let response;
-        response = await fetch(`/api/location/rcm/hot?lat=${selectedLocation.lat}&lng=${selectedLocation.lng}`);
+        // Add Authorization header with JWT token
+        response = await fetch(`/api/location/search/activity?lat=${selectedLocation.lat}&lng=${selectedLocation.lng}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        // Check if response is unauthorized
+        if (response.status === 401) {
+            hideLoading();
+            alert('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+            window.location.href = '/login';
+            return;
+        }
         
         const locations = await response.json();
 
@@ -578,7 +656,7 @@ async function recommendMostPopular() {
             `;
             resultItem.onclick = () => {
                 // Keep the current location centered and zoom in
-                searchMap.setView([selectedLocation.lat, selectedLocation.lng], 16);
+                searchMap.setView([selectedLocation.lat, selectedLocation.lng], 18);
                 marker.openPopup();
                 
                 // Draw route from current location to selected point
@@ -755,5 +833,5 @@ window.searchFunctions = {
     showLoading,
     hideLoading,
     getCurrentLocation,
-    recommendMostPopular
+    SearchPlaces
 };

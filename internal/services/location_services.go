@@ -115,3 +115,50 @@ func (r *LocationServices) GetByUser(userID uint) ([]models.Location, error) {
 	}
 	return locations, nil
 }
+
+// Các hàm bổ sung cho admin
+func (s *LocationServices) GetAllLocations() ([]models.Location, error) {
+	var locations []models.Location
+	err := s.DB.Find(&locations).Error
+	if err != nil {
+		return nil, err
+	}
+	return locations, nil
+}
+
+func (s *LocationServices) GetLocationByID(id uint) (*models.Location, error) {
+	var location models.Location
+	err := s.DB.First(&location, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &location, nil
+}
+
+func (s *LocationServices) CreateLocation(name, category string, lat, lng float64, tag string, activities []string) (*models.Location, error) {
+	location := models.Location{
+		Name:      name,
+		Latitude:  lat,
+		Longitude: lng,
+	}
+
+	err := s.DB.Create(&location).Error
+	if err != nil {
+		return nil, err
+	}
+	return &location, nil
+}
+
+func (s *LocationServices) UpdateLocation(location *models.Location) error {
+	return s.DB.Save(location).Error
+}
+
+func (s *LocationServices) DeleteLocation(id uint) error {
+	return s.DB.Delete(&models.Location{}, id).Error
+}
+
+func (s *LocationServices) GetLocationCount() (int64, error) {
+	var count int64
+	err := s.DB.Model(&models.Location{}).Count(&count).Error
+	return count, err
+}
