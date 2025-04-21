@@ -83,11 +83,11 @@ func SetupNewRouter(db *db.DB, JwtSescret string) *gin.Engine {
 	adminHandler := handlers.NewAdminHandler(userService, locationService, trajectoryService)
 
 	// Admin page
-	router.GET("/admin", middleware.JWTAuth(authService), middleware.AdminAuthMiddleware(), adminHandler.AdminPage)
+	router.GET("/admin", middleware.JWTAuth(authService), adminHandler.AdminPage)
 
 	// Admin API routes
 	adminGroup := router.Group("/api/admin")
-	adminGroup.Use(middleware.JWTAuth(authService), middleware.AdminAuthMiddleware())
+	adminGroup.Use(middleware.JWTAuth(authService))
 	{
 		// User management
 		adminGroup.GET("/users", adminHandler.GetUsers)

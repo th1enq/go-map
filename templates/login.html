@@ -21,6 +21,10 @@
                     <label for="password" class="form-label">Password</label>
                     <input type="password" class="form-control" id="password" placeholder="Enter your password" required>
                 </div>
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="rememberMe" checked>
+                    <label class="form-check-label" for="rememberMe">Remember me</label>
+                </div>
                 <button type="submit" class="btn btn-primary w-100">Login</button>
             </form>
             <div class="text-center mt-3">
@@ -37,6 +41,10 @@
             const loginForm = document.getElementById('login-form');
             const alertContainer = document.getElementById('alert-container');
             
+            // Clear localStorage to ensure we don't have stale tokens
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            
             // Check if there's an auth error in localStorage and display it
             const authError = localStorage.getItem('authError');
             if (authError) {
@@ -46,14 +54,7 @@
                         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                     </div>
                 `;
-                // Remove the error message from localStorage after displaying it
                 localStorage.removeItem('authError');
-            }
-            
-            // Check if user is already logged in
-            const token = localStorage.getItem('token');
-            if (token) {
-                window.location.href = '/';
             }
             
             loginForm.addEventListener('submit', async function(e) {
@@ -61,56 +62,93 @@
                 
                 const email = document.getElementById('email').value;
                 const password = document.getElementById('password').value;
+                const rememberMe = document.getElementById('rememberMe').checked;
                 
                 try {
-                    // Debug log for form data
-                    console.log('Submitting login data:', { email, password });
+                    // Show loading state
+                    const submitBtn = this.querySelector('button[type="submit"]');
+                    const originalBtnText = submitBtn.innerHTML;
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Logging in...';
+                    
+                    console.log('[Login] Attempting login for:', email);
                     
                     const response = await fetch('/api/auth/login', {
                         method: 'POST',
                         headers: {
-                            'Authorization': `Bearer ${token}`,
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ email, password })
+                        body: JSON.stringify({ 
+                            email, 
+                            password,
+                            remember_me: rememberMe 
+                        })
                     });
                     
-                    // Debug log for response status
-                    console.log('Response status:', response.status);
-                    
                     const data = await response.json();
-                    
-                    // Debug log for response data
-                    console.log('Response data:', data);
-                    console.log('User object:', data.user);
-                    console.log('Is user object empty?', !data.user || Object.keys(data.user).length === 0);
-                    console.log('User role:', data.user ? data.user.role : 'No role found');
+                    console.log('[Login] Response status:', response.status);
                     
                     if (!response.ok) {
                         throw new Error(data.error || 'Login failed');
                     }
                     
-                    // Store token in localStorage
+                    // Store token and user data in localStorage
+                    console.log('[Login] Storing token and user data');
                     localStorage.setItem('token', data.token);
                     localStorage.setItem('user', JSON.stringify(data.user));
+
+                    // Create a cookie as well for server-side auth (in case localStorage doesn't work)
+                    document.cookie = `auth_token=${data.token}; path=/; max-age=${rememberMe ? 2592000 : 86400}; SameSite=Strict`;
                     
-                    // Redirect to home page
-                    window.location.href = '/';
+                    console.log('[Login] Login successful for:', email);
+                    console.log('[Login] User role:', data.user.role);
+                    
+                    // Validate we have what we need
+                    if (!data.token) {
+                        throw new Error('No token received from server');
+                    }
+                    
+                    if (!data.user || !data.user.role) {
+                        throw new Error('No user data or role received from server');
+                    }
+                    
+                    // Show success message
+                    alertContainer.innerHTML = `
+                        <div class="alert alert-success alert-dismissible fade show" role="alert">
+                            Login successful! Redirecting...
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    `;
+                    
+                    // Redirect based on user role
+                    setTimeout(() => {
+                        if (data.user.role === 'admin') {
+                            console.log('[Login] Redirecting to admin dashboard');
+                            window.location.href = '/admin';
+                        } else {
+                            console.log('[Login] Redirecting to home page');
+                            window.location.href = '/';
+                        }
+                    }, 1000);
                     
                 } catch (error) {
-                    // Show error message
+                    console.error('[Login] Error:', error);
                     alertContainer.innerHTML = `
                         <div class="alert alert-danger alert-dismissible fade show" role="alert">
                             ${error.message}
                             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                         </div>
                     `;
+                    // Reset the button
+                    const submitBtn = this.querySelector('button[type="submit"]');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = 'Login';
                 }
             });
             
             // Handle forgot password
             document.getElementById('forgot-password').addEventListener('click', function(e) {
-                e.preventDefault();"Authorization header is required"
+                e.preventDefault();
                 alertContainer.innerHTML = `
                     <div class="alert alert-info alert-dismissible fade show" role="alert">
                         Password reset functionality is not implemented yet.

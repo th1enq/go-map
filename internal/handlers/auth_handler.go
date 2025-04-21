@@ -12,8 +12,9 @@ type AuthHandler struct {
 }
 
 type LoginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
+	Email      string `json:"email" binding:"required,email"`
+	Password   string `json:"password" binding:"required"`
+	RememberMe bool   `json:"remember_me"`
 }
 
 type RegisterRequest struct {
@@ -44,6 +45,24 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		})
 		return
 	}
+
+	// Set cookie with the token
+	// Use 30 days for remember me, or 1 day for regular login
+	maxAge := 86400 // 1 day in seconds
+	if req.RememberMe {
+		maxAge = 2592000 // 30 days in seconds
+	}
+
+	// Set HTTP-only cookie
+	c.SetCookie(
+		"auth_token",
+		token,
+		maxAge,
+		"/",
+		"",
+		false, // secure - set to true in production with HTTPS
+		true,  // HTTP only
+	)
 
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
@@ -82,6 +101,17 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	// Set cookie with the token (1 day default for new registrations)
+	c.SetCookie(
+		"auth_token",
+		token,
+		86400, // 1 day in seconds
+		"/",
+		"",
+		false, // secure
+		true,  // HTTP only
+	)
+
 	c.JSON(http.StatusCreated, gin.H{
 		"token": token,
 		"user": gin.H{
@@ -95,18 +125,16 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 // Logout handles the user logout process
 func (h *AuthHandler) Logout(c *gin.Context) {
-	// Get token from Authorization header
-	authHeader := c.GetHeader("Authorization")
-	if authHeader == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "Successfully logged out",
-		})
-		return
-	}
-
-	// Since JWT is stateless, we don't actually invalidate the token server-side
-	// Instead, we rely on the client to remove the token
-	// In a more advanced implementation, you could add the token to a blacklist
+	// Clear the auth cookie
+	c.SetCookie(
+		"auth_token",
+		"",
+		-1, // expire immediately
+		"/",
+		"",
+		false,
+		true,
+	)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Successfully logged out",

@@ -60,10 +60,10 @@ func (r *RecommendHandler) RecommendBySameTracjectory(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot get recommendations"})
 		return
 	}
-	locations, err := r.recommendServices.FixLocations(clusters)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot fix locations name"})
-		return
-	}
-	c.JSON(http.StatusOK, locations)
+	// locations, err := r.recommendServices.FixLocations(clusters)
+	// if err != nil {
+	// 	c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot fix locations name"})
+	// 	return
+	// }
+	c.JSON(http.StatusOK, clusters)
 }
