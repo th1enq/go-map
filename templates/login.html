@@ -3,160 +3,57 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login</title>
+    <title>Login | Go Map</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/auth.css">
 </head>
-<body>
-    <div class="container d-flex justify-content-center align-items-center vh-100">
-        <div class="card p-4" style="width: 100%; max-width: 400px;">
-            <h2 class="text-center mb-4">Login</h2>
-            <div id="alert-container"></div>
-            <form id="login-form">
-                <div class="mb-3">
-                    <label for="email" class="form-label">Email address</label>
-                    <input type="email" class="form-control" id="email" placeholder="Enter your email" required>
+<body class="auth-page">
+    <div class="container">
+        <div class="auth-container">
+            <div class="auth-card">
+                <div class="auth-header text-center">
+                    <h1 class="mb-4">Welcome Back</h1>
+                    <p class="text-muted mb-4">Log in to your account to continue</p>
                 </div>
-                <div class="mb-3">
-                    <label for="password" class="form-label">Password</label>
-                    <input type="password" class="form-control" id="password" placeholder="Enter your password" required>
-                </div>
-                <div class="mb-3 form-check">
-                    <input type="checkbox" class="form-check-input" id="rememberMe" checked>
-                    <label class="form-check-label" for="rememberMe">Remember me</label>
-                </div>
-                <button type="submit" class="btn btn-primary w-100">Login</button>
-            </form>
-            <div class="text-center mt-3">
-                <a href="#" id="forgot-password">Forgot password?</a>
-            </div>
-            <div class="text-center mt-3">
-                Don't have an account? <a href="/register">Register</a>
+                
+                <div id="alert-container"></div>
+                
+                <form id="login-form">
+                    <div class="form-floating mb-3">
+                        <input type="email" class="form-control" id="email" placeholder="name@example.com" required>
+                        <label for="email"><i class="fas fa-envelope me-2"></i>Email address</label>
+                    </div>
+                    
+                    <div class="form-floating mb-3">
+                        <input type="password" class="form-control" id="password" placeholder="Password" required>
+                        <label for="password"><i class="fas fa-lock me-2"></i>Password</label>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" id="rememberMe" checked>
+                            <label class="form-check-label" for="rememberMe">Remember me</label>
+                        </div>
+                        <a href="#" id="forgot-password" class="link-primary">Forgot password?</a>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100 py-2 mb-3">
+                        <i class="fas fa-sign-in-alt me-2"></i>Login
+                    </button>
+                    
+                    <div class="text-center mt-4">
+                        <p>Don't have an account? <a href="/register" class="link-primary">Register</a></p>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const loginForm = document.getElementById('login-form');
-            const alertContainer = document.getElementById('alert-container');
-            
-            // Clear localStorage to ensure we don't have stale tokens
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            
-            // Check if there's an auth error in localStorage and display it
-            const authError = localStorage.getItem('authError');
-            if (authError) {
-                alertContainer.innerHTML = `
-                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                        ${authError}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                `;
-                localStorage.removeItem('authError');
-            }
-            
-            loginForm.addEventListener('submit', async function(e) {
-                e.preventDefault();
-                
-                const email = document.getElementById('email').value;
-                const password = document.getElementById('password').value;
-                const rememberMe = document.getElementById('rememberMe').checked;
-                
-                try {
-                    // Show loading state
-                    const submitBtn = this.querySelector('button[type="submit"]');
-                    const originalBtnText = submitBtn.innerHTML;
-                    submitBtn.disabled = true;
-                    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Logging in...';
-                    
-                    console.log('[Login] Attempting login for:', email);
-                    
-                    const response = await fetch('/api/auth/login', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ 
-                            email, 
-                            password,
-                            remember_me: rememberMe 
-                        })
-                    });
-                    
-                    const data = await response.json();
-                    console.log('[Login] Response status:', response.status);
-                    
-                    if (!response.ok) {
-                        throw new Error(data.error || 'Login failed');
-                    }
-                    
-                    // Store token and user data in localStorage
-                    console.log('[Login] Storing token and user data');
-                    localStorage.setItem('token', data.token);
-                    localStorage.setItem('user', JSON.stringify(data.user));
 
-                    // Create a cookie as well for server-side auth (in case localStorage doesn't work)
-                    document.cookie = `auth_token=${data.token}; path=/; max-age=${rememberMe ? 2592000 : 86400}; SameSite=Strict`;
-                    
-                    console.log('[Login] Login successful for:', email);
-                    console.log('[Login] User role:', data.user.role);
-                    
-                    // Validate we have what we need
-                    if (!data.token) {
-                        throw new Error('No token received from server');
-                    }
-                    
-                    if (!data.user || !data.user.role) {
-                        throw new Error('No user data or role received from server');
-                    }
-                    
-                    // Show success message
-                    alertContainer.innerHTML = `
-                        <div class="alert alert-success alert-dismissible fade show" role="alert">
-                            Login successful! Redirecting...
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                        </div>
-                    `;
-                    
-                    // Redirect based on user role
-                    setTimeout(() => {
-                        if (data.user.role === 'admin') {
-                            console.log('[Login] Redirecting to admin dashboard');
-                            window.location.href = '/admin';
-                        } else {
-                            console.log('[Login] Redirecting to home page');
-                            window.location.href = '/';
-                        }
-                    }, 1000);
-                    
-                } catch (error) {
-                    console.error('[Login] Error:', error);
-                    alertContainer.innerHTML = `
-                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                            ${error.message}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                        </div>
-                    `;
-                    // Reset the button
-                    const submitBtn = this.querySelector('button[type="submit"]');
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = 'Login';
-                }
-            });
-            
-            // Handle forgot password
-            document.getElementById('forgot-password').addEventListener('click', function(e) {
-                e.preventDefault();
-                alertContainer.innerHTML = `
-                    <div class="alert alert-info alert-dismissible fade show" role="alert">
-                        Password reset functionality is not implemented yet.
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                `;
-            });
-        });
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/common.js"></script>
+    <script src="/static/js/login.js"></script>
 </body>
 </html>

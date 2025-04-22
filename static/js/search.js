@@ -3,6 +3,8 @@ let searchTimeout = null;
 let searchMap = null; // Changed from recommendMap to searchMap
 let searchInput;
 let suggestionsDiv;
+let selectedCategory = 'all'; // Default category selection
+let searchResults = []; // Store all search results for filtering
 
 // Function to get the JWT token from localStorage
 function getAuthToken() {
@@ -10,9 +12,23 @@ function getAuthToken() {
 }
 
 // Function to show loading overlay
-function showLoading() {
+function showLoading(customMessage) {
     const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingText = document.getElementById('loading-text');
+    
     if (loadingOverlay) {
+        if (loadingText && customMessage) {
+            loadingText.textContent = customMessage;
+        } else if (loadingText && selectedCategory) {
+            if (selectedCategory === 'all') {
+                loadingText.textContent = 'Searching for all locations...';
+            } else {
+                // Get the display name from the button to ensure it matches what's shown in the UI
+                const categoryButton = document.querySelector(`.category-btn[data-category="${selectedCategory}"]`);
+                const categoryDisplayName = categoryButton ? categoryButton.textContent.trim() : selectedCategory;
+                loadingText.textContent = `Searching for ${categoryDisplayName} locations...`;
+            }
+        }
         loadingOverlay.style.display = 'flex';
     }
 }
@@ -378,7 +394,73 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
         console.error('Failed to initialize map');
     }
+    
+    // Setup category filter buttons
+    setupCategoryFilters();
 });
+
+// Function to setup category filters
+function setupCategoryFilters() {
+    console.log('Setting up category filters...');
+    const categoryButtons = document.querySelectorAll('.category-btn');
+    
+    if (categoryButtons.length === 0) {
+        console.error('Category buttons not found');
+        return;
+    }
+    
+    console.log(`Found ${categoryButtons.length} category buttons`);
+    
+    // Set initial category from active button
+    const activeButton = document.querySelector('.category-btn.active');
+    if (activeButton) {
+        selectedCategory = activeButton.getAttribute('data-category');
+        console.log('Initial category:', selectedCategory);
+        
+        // Update the current category indicator
+        const currentCategoryElement = document.getElementById('current-category');
+        if (currentCategoryElement) {
+            const categoryText = activeButton.textContent.trim();
+            currentCategoryElement.textContent = `Current: ${categoryText}`;
+        }
+    }
+    
+    categoryButtons.forEach(button => {
+        // Remove any existing click listeners to avoid duplicates
+        const clone = button.cloneNode(true);
+        button.parentNode.replaceChild(clone, button);
+        
+        // Add new click listener
+        clone.addEventListener('click', function() {
+            // Get all category buttons
+            const allButtons = document.querySelectorAll('.category-btn');
+            
+            // Remove active class from all buttons
+            allButtons.forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Add active class to clicked button
+            this.classList.add('active');
+            
+            // Update selected category
+            selectedCategory = this.getAttribute('data-category');
+            console.log('Selected category:', selectedCategory);
+            
+            // Update the current category indicator
+            const currentCategoryElement = document.getElementById('current-category');
+            if (currentCategoryElement) {
+                const categoryText = this.textContent.trim();
+                currentCategoryElement.textContent = `Current: ${categoryText}`;
+            }
+            
+            // If we have a selected location, perform a new search
+            if (selectedLocation) {
+                SearchPlaces();
+            }
+        });
+    });
+}
 
 // Get current location
 function getCurrentLocation() {
@@ -531,6 +613,7 @@ async function SearchPlaces() {
     resultsDiv.innerHTML = "";
 
     try {
+        // Show loading overlay with category-specific message
         showLoading();
         
         // Clear previous search markers but keep current and selected location markers
@@ -547,9 +630,23 @@ async function SearchPlaces() {
             window.currentRoute = null;
         }
         
-        let response;
-        // Add Authorization header with JWT token
-        response = await fetch(`/api/location/search/activity?lat=${selectedLocation.lat}&lng=${selectedLocation.lng}`, {
+        // Log current category for debugging
+        console.log(`[Search] Current category: ${selectedCategory}`);
+        
+        // Determine which API endpoint to use based on selected category
+        let apiUrl;
+        if (selectedCategory === 'all') {
+            // For 'all' category, use the activity search endpoint
+            apiUrl = `/api/location/search/activity?lat=${selectedLocation.lat}&lng=${selectedLocation.lng}`;
+        } else {
+            // For specific categories, use the place search with activity parameter
+            apiUrl = `/api/location/search/place?lat=${selectedLocation.lat}&lng=${selectedLocation.lng}&activity=${selectedCategory}`;
+        }
+        
+        console.log(`[Search] Using API endpoint: ${apiUrl}`);
+        
+        // Make the API request
+        const response = await fetch(apiUrl, {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
@@ -597,12 +694,28 @@ async function SearchPlaces() {
             };
         }).sort((a, b) => a.distance - b.distance);
 
+        // Update the result count text
+        const resultCountElem = document.getElementById('result-count');
+        
         if (locationsWithDistance.length === 0) {
             resultsDiv.innerHTML = '<div class="no-results">Không tìm thấy địa điểm nào</div>';
+            
+            if (resultCountElem) {
+                const categoryName = document.querySelector(`.category-btn[data-category="${selectedCategory}"]`)?.textContent.trim() || selectedCategory;
+                if (selectedCategory === 'all') {
+                    resultCountElem.textContent = 'Không tìm thấy kết quả nào';
+                } else {
+                    resultCountElem.textContent = `Không tìm thấy kết quả cho ${categoryName}`;
+                }
+            }
+            
             hideLoading();
             return;
         }
 
+        // Store search results for potential future filtering
+        searchResults = locationsWithDistance;
+        
         // Store markers in the global array
         window.searchMarkers = [];
         
@@ -624,7 +737,19 @@ async function SearchPlaces() {
             });
         };
         
+        // Update the result count text
+        if (resultCountElem) {
+            const categoryName = document.querySelector(`.category-btn[data-category="${selectedCategory}"]`)?.textContent.trim() || selectedCategory;
+            if (selectedCategory === 'all') {
+                resultCountElem.textContent = `Hiển thị tất cả (${locationsWithDistance.length} kết quả)`;
+            } else {
+                resultCountElem.textContent = `Hiển thị ${categoryName} (${locationsWithDistance.length} kết quả)`;
+            }
+        }
+        
+        // Display results
         locationsWithDistance.forEach((location, index) => {
+            // Add marker to map
             const marker = L.marker([location.latitude, location.longitude], {
                 icon: createPoiIcon(index)
             })
@@ -641,6 +766,7 @@ async function SearchPlaces() {
             
             window.searchMarkers.push(marker);
 
+            // Add item to results list
             const resultItem = document.createElement("div");
             resultItem.className = "location-item";
             resultItem.innerHTML = `
@@ -654,162 +780,21 @@ async function SearchPlaces() {
                     <div class="distance-badge">${(location.distance * 1000).toFixed(0)}m</div>
                 </div>
             `;
-            resultItem.onclick = () => {
-                // Keep the current location centered and zoom in
-                searchMap.setView([selectedLocation.lat, selectedLocation.lng], 18);
+            
+            // Add click handler for the result item
+            resultItem.addEventListener('click', function() {
+                // Center map on the selected location
+                searchMap.setView([location.latitude, location.longitude], 18);
                 marker.openPopup();
                 
-                // Draw route from current location to selected point
-                if (selectedLocation) {
-                    // Xóa tuyến đường cũ nếu có, nhưng giữ nguyên marker
-                    if (window.currentRoute) {
-                        searchMap.removeLayer(window.currentRoute);
-                        window.currentRoute = null;
-                    }
-                    
-                    // Đảm bảo marker vị trí hiện tại và vị trí đã chọn vẫn hiển thị
-                    if (window.currentLocationMarker && !searchMap.hasLayer(window.currentLocationMarker)) {
-                        window.currentLocationMarker.addTo(searchMap);
-                    }
-                    
-                    if (window.selectedLocationMarker && !searchMap.hasLayer(window.selectedLocationMarker)) {
-                        window.selectedLocationMarker.addTo(searchMap);
-                    }
-                    
-                    // Hiển thị thông báo đang tính toán
-                    const loadingPopup = L.popup()
-                        .setLatLng([selectedLocation.lat, selectedLocation.lng])
-                        .setContent(`
-                            <div style="text-align: center; padding: 5px;">
-                                <div class="spinner-border spinner-border-sm text-primary" role="status">
-                                    <span class="visually-hidden">Loading...</span>
-                                </div>
-                                <span style="margin-left: 5px;">Đang tính toán lộ trình...</span>
-                            </div>
-                        `)
-                        .openOn(searchMap);
-                    
-                    // Lấy lộ trình từ OSRM API
-                    fetch(`https://router.project-osrm.org/route/v1/driving/${selectedLocation.lng},${selectedLocation.lat};${location.longitude},${location.latitude}?overview=full&geometries=geojson`)
-                        .then(response => response.json())
-                        .then(data => {
-                            // Đóng popup tải
-                            searchMap.closePopup(loadingPopup);
-                            
-                            if (data.routes && data.routes.length > 0) {
-                                const route = data.routes[0];
-                                
-                                // Chuyển đổi tọa độ từ GeoJSON (kinh độ, vĩ độ) sang Leaflet (vĩ độ, kinh độ)
-                                const routeCoordinates = route.geometry.coordinates.map(coord => [coord[1], coord[0]]);
-                                
-                                // Vẽ tuyến đường với kiểu mới
-                                window.currentRoute = L.polyline(routeCoordinates, {
-                                    color: '#007AFF',
-                                    weight: 5,
-                                    opacity: 0.8,
-                                    dashArray: '10, 10',
-                                    lineCap: 'round',
-                                    lineJoin: 'round'
-                                }).addTo(searchMap);
-                                
-                                // Tính toán thông tin tuyến đường
-                                const distance = (route.distance / 1000).toFixed(2); // Chuyển đổi sang km với 2 số thập phân
-                                const duration = Math.round(route.duration / 60); // Chuyển đổi sang phút
-                                
-                                // Hiển thị thông tin tuyến đường
-                                L.popup()
-                                    .setLatLng([selectedLocation.lat, selectedLocation.lng])
-                                    .setContent(`
-                                        <div style="font-family: Arial, sans-serif; max-width: 200px;">
-                                            <strong style="color: #007AFF;">Thông tin lộ trình:</strong><br>
-                                            <strong>Khoảng cách:</strong> ${distance} km<br>
-                                            <strong>Thời gian lái xe:</strong> ${duration} phút<br>
-                                            <small>(Đây là tuyến đường lái xe ngắn nhất)</small>
-                                        </div>
-                                    `)
-                                    .openOn(searchMap);
-                                
-                                // Điều chỉnh tỷ lệ bản đồ để vừa hiển thị tuyến đường và bao gồm cả marker
-                                const bounds = L.latLngBounds([
-                                    [selectedLocation.lat, selectedLocation.lng],
-                                    [location.latitude, location.longitude],
-                                    ...routeCoordinates
-                                ]);
-                                
-                                // Phóng to vừa đủ để thấy tuyến đường
-                                searchMap.fitBounds(bounds, { 
-                                    padding: [50, 50],
-                                    maxZoom: 16 // Giới hạn mức zoom tối đa
-                                });
-                            } else {
-                                // Nếu không tìm thấy tuyến đường, vẽ đường thẳng đơn giản
-                                window.currentRoute = L.polyline([
-                                    [selectedLocation.lat, selectedLocation.lng],
-                                    [location.latitude, location.longitude]
-                                ], {
-                                    color: '#007AFF',
-                                    weight: 5,
-                                    opacity: 0.8,
-                                    dashArray: '10, 10',
-                                    lineCap: 'round',
-                                    lineJoin: 'round'
-                                }).addTo(searchMap);
-                                
-                                // Tính khoảng cách đường chim bay
-                                const airDistance = (location.distance * 1000).toFixed(0);
-                                
-                                // Hiển thị thông báo không tìm thấy tuyến đường
-                                L.popup()
-                                    .setLatLng([selectedLocation.lat, selectedLocation.lng])
-                                    .setContent(`
-                                        <div style="font-family: Arial, sans-serif; max-width: 200px;">
-                                            <strong style="color: #007AFF;">Không tìm thấy tuyến đường!</strong><br>
-                                            <strong>Khoảng cách đường chim bay:</strong> ${airDistance} m<br>
-                                            <small>(Đây là khoảng cách trực tiếp giữa hai điểm)</small>
-                                        </div>
-                                    `)
-                                    .openOn(searchMap);
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Lỗi khi tính toán tuyến đường:', error);
-                            
-                            // Đóng popup tải
-                            searchMap.closePopup(loadingPopup);
-                            
-                            // Vẽ đường thẳng đơn giản nếu có lỗi
-                            window.currentRoute = L.polyline([
-                                [selectedLocation.lat, selectedLocation.lng],
-                                [location.latitude, location.longitude]
-                            ], {
-                                color: '#007AFF',
-                                weight: 5,
-                                opacity: 0.8,
-                                dashArray: '10, 10',
-                                lineCap: 'round',
-                                lineJoin: 'round'
-                            }).addTo(searchMap);
-                            
-                            // Tính khoảng cách đường chim bay
-                            const airDistance = (location.distance * 1000).toFixed(0);
-                            
-                            // Hiển thị thông báo lỗi
-                            L.popup()
-                                .setLatLng([selectedLocation.lat, selectedLocation.lng])
-                                .setContent(`
-                                    <div style="font-family: Arial, sans-serif; max-width: 200px;">
-                                        <strong style="color: #007AFF;">Lỗi khi tính toán tuyến đường!</strong><br>
-                                        <strong>Khoảng cách đường chim bay:</strong> ${airDistance} m<br>
-                                        <small>(Đây là khoảng cách trực tiếp giữa hai điểm)</small>
-                                    </div>
-                                `)
-                                .openOn(searchMap);
-                        });
-                }
-            };
+                // Draw route
+                drawRouteBetweenPoints(selectedLocation, location);
+            });
+            
             resultsDiv.appendChild(resultItem);
         });
 
+        // Adjust map bounds to show all results
         if (locationsWithDistance.length > 0) {
             // Create bounds that include both the selected location and all result locations
             const points = [
@@ -819,12 +804,161 @@ async function SearchPlaces() {
             const bounds = L.latLngBounds(points);
             searchMap.fitBounds(bounds, { padding: [50, 50] });
         }
+        
+        // Hide loading overlay
         hideLoading();
     } catch (error) {
         console.error("Error fetching locations:", error);
         hideLoading();
-        alert("Đã xảy ra lỗi khi tìm kiếm địa điểm.");
+        alert("Đã xảy ra lỗi khi tìm kiếm địa điểm: " + error.message);
     }
+}
+
+// Helper function to draw route between two points
+function drawRouteBetweenPoints(startPoint, endPoint) {
+    // Clear existing route
+    if (window.currentRoute) {
+        searchMap.removeLayer(window.currentRoute);
+        window.currentRoute = null;
+    }
+    
+    // Make sure markers are visible
+    if (window.currentLocationMarker && !searchMap.hasLayer(window.currentLocationMarker)) {
+        window.currentLocationMarker.addTo(searchMap);
+    }
+    
+    if (window.selectedLocationMarker && !searchMap.hasLayer(window.selectedLocationMarker)) {
+        window.selectedLocationMarker.addTo(searchMap);
+    }
+    
+    // Show loading popup
+    const loadingPopup = L.popup()
+        .setLatLng([startPoint.lat, startPoint.lng])
+        .setContent(`
+            <div style="text-align: center; padding: 5px;">
+                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <span style="margin-left: 5px;">Đang tính toán lộ trình...</span>
+            </div>
+        `)
+        .openOn(searchMap);
+    
+    // Get route from OSRM API
+    fetch(`https://router.project-osrm.org/route/v1/driving/${startPoint.lng},${startPoint.lat};${endPoint.longitude},${endPoint.latitude}?overview=full&geometries=geojson`)
+        .then(response => response.json())
+        .then(data => {
+            // Close loading popup
+            searchMap.closePopup(loadingPopup);
+            
+            if (data.routes && data.routes.length > 0) {
+                const route = data.routes[0];
+                
+                // Convert coordinates from GeoJSON to Leaflet format
+                const routeCoordinates = route.geometry.coordinates.map(coord => [coord[1], coord[0]]);
+                
+                // Draw route
+                window.currentRoute = L.polyline(routeCoordinates, {
+                    color: '#007AFF',
+                    weight: 5,
+                    opacity: 0.8,
+                    dashArray: '10, 10',
+                    lineCap: 'round',
+                    lineJoin: 'round'
+                }).addTo(searchMap);
+                
+                // Calculate route info
+                const distance = (route.distance / 1000).toFixed(2); // km
+                const duration = Math.round(route.duration / 60); // minutes
+                
+                // Show route info popup
+                L.popup()
+                    .setLatLng([startPoint.lat, startPoint.lng])
+                    .setContent(`
+                        <div style="font-family: Arial, sans-serif; max-width: 200px;">
+                            <strong style="color: #007AFF;">Thông tin lộ trình:</strong><br>
+                            <strong>Khoảng cách:</strong> ${distance} km<br>
+                            <strong>Thời gian lái xe:</strong> ${duration} phút<br>
+                            <small>(Đây là tuyến đường lái xe ngắn nhất)</small>
+                        </div>
+                    `)
+                    .openOn(searchMap);
+                
+                // Adjust map to show route
+                const bounds = L.latLngBounds([
+                    [startPoint.lat, startPoint.lng],
+                    [endPoint.latitude, endPoint.longitude],
+                    ...routeCoordinates
+                ]);
+                
+                searchMap.fitBounds(bounds, { 
+                    padding: [50, 50],
+                    maxZoom: 16
+                });
+            } else {
+                // Fall back to straight line if no route found
+                window.currentRoute = L.polyline([
+                    [startPoint.lat, startPoint.lng],
+                    [endPoint.latitude, endPoint.longitude]
+                ], {
+                    color: '#007AFF',
+                    weight: 5,
+                    opacity: 0.8,
+                    dashArray: '10, 10',
+                    lineCap: 'round',
+                    lineJoin: 'round'
+                }).addTo(searchMap);
+                
+                // Calculate straight-line distance
+                const airDistance = (endPoint.distance * 1000).toFixed(0);
+                
+                // Show fallback info popup
+                L.popup()
+                    .setLatLng([startPoint.lat, startPoint.lng])
+                    .setContent(`
+                        <div style="font-family: Arial, sans-serif; max-width: 200px;">
+                            <strong style="color: #007AFF;">Không tìm thấy tuyến đường!</strong><br>
+                            <strong>Khoảng cách đường chim bay:</strong> ${airDistance} m<br>
+                            <small>(Đây là khoảng cách trực tiếp giữa hai điểm)</small>
+                        </div>
+                    `)
+                    .openOn(searchMap);
+            }
+        })
+        .catch(error => {
+            console.error('Lỗi khi tính toán tuyến đường:', error);
+            
+            // Close loading popup
+            searchMap.closePopup(loadingPopup);
+            
+            // Fall back to straight line on error
+            window.currentRoute = L.polyline([
+                [startPoint.lat, startPoint.lng],
+                [endPoint.latitude, endPoint.longitude]
+            ], {
+                color: '#007AFF',
+                weight: 5,
+                opacity: 0.8,
+                dashArray: '10, 10',
+                lineCap: 'round',
+                lineJoin: 'round'
+            }).addTo(searchMap);
+            
+            // Calculate straight-line distance
+            const airDistance = (endPoint.distance * 1000).toFixed(0);
+            
+            // Show error popup
+            L.popup()
+                .setLatLng([startPoint.lat, startPoint.lng])
+                .setContent(`
+                    <div style="font-family: Arial, sans-serif; max-width: 200px;">
+                        <strong style="color: #007AFF;">Lỗi khi tính toán tuyến đường!</strong><br>
+                        <strong>Khoảng cách đường chim bay:</strong> ${airDistance} m<br>
+                        <small>(Đây là khoảng cách trực tiếp giữa hai điểm)</small>
+                    </div>
+                `)
+                .openOn(searchMap);
+        });
 }
 
 // Export functions for use in other files

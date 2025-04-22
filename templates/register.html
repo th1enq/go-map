@@ -3,96 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Register</title>
+    <title>Register | Go Map</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/auth.css">
 </head>
-<body>
-    <div class="container d-flex justify-content-center align-items-center vh-100">
-        <div class="card p-4" style="width: 100%; max-width: 400px;">
-            <h2 class="text-center mb-4">Create Account</h2>
-            <div id="alert-container"></div>
-            <form id="register-form">
-                <div class="mb-3">
-                    <label for="name" class="form-label">Full Name</label>
-                    <input type="text" class="form-control" id="name" placeholder="Enter your full name" required>
+<body class="auth-page">
+    <div class="container">
+        <div class="auth-container">
+            <div class="auth-card">
+                <div class="auth-header text-center">
+                    <h1 class="mb-4">Create Account</h1>
+                    <p class="text-muted mb-4">Register to start exploring locations</p>
                 </div>
-                <div class="mb-3">
-                    <label for="email" class="form-label">Email address</label>
-                    <input type="email" class="form-control" id="email" placeholder="Enter your email" required>
-                </div>
-                <div class="mb-3">
-                    <label for="password" class="form-label">Password</label>
-                    <input type="password" class="form-control" id="password" placeholder="Create a password" required minlength="6">
-                </div>
-                <button type="submit" class="btn btn-primary w-100">Register</button>
-            </form>
-            <div class="text-center mt-3">
-                Already have an account? <a href="/login">Login</a>
+                
+                <div id="alert-container"></div>
+                
+                <form id="register-form">
+                    <div class="form-floating mb-3">
+                        <input type="text" class="form-control" id="name" placeholder="Your Name" required>
+                        <label for="name"><i class="fas fa-user me-2"></i>Full Name</label>
+                    </div>
+                    
+                    <div class="form-floating mb-3">
+                        <input type="email" class="form-control" id="email" placeholder="name@example.com" required>
+                        <label for="email"><i class="fas fa-envelope me-2"></i>Email address</label>
+                    </div>
+                    
+                    <div class="form-floating mb-4">
+                        <input type="password" class="form-control" id="password" placeholder="Password" required minlength="6">
+                        <label for="password"><i class="fas fa-lock me-2"></i>Password</label>
+                        <small class="form-text text-muted mt-1 d-block">Password must be at least 6 characters long</small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100 py-2 mb-3">
+                        <i class="fas fa-user-plus me-2"></i>Create Account
+                    </button>
+                    
+                    <div class="text-center mt-4">
+                        <p>Already have an account? <a href="/login" class="link-primary">Login</a></p>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const registerForm = document.getElementById('register-form');
-            const alertContainer = document.getElementById('alert-container');
-            
-            // Check if user is already logged in
-            const token = localStorage.getItem('token');
-            if (token) {
-                window.location.href = '/';
-            }
-            
-            registerForm.addEventListener('submit', async function(e) {
-                e.preventDefault();
-                
-                const name = document.getElementById('name').value;
-                const email = document.getElementById('email').value;
-                const password = document.getElementById('password').value;
-                
-                try {
-                    const response = await fetch('/api/auth/register', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ name, email, password })
-                    });
-                    
-                    const data = await response.json();
-                    
-                    if (!response.ok) {
-                        throw new Error(data.error || 'Registration failed');
-                    }
-                    
-                    // Store token in localStorage
-                    localStorage.setItem('token', data.token);
-                    localStorage.setItem('user', JSON.stringify(data.user));
-                    
-                    // Show success message and redirect after a delay
-                    alertContainer.innerHTML = `
-                        <div class="alert alert-success alert-dismissible fade show" role="alert">
-                            Registration successful! Redirecting to homepage...
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                        </div>
-                    `;
-                    
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 2000);
-                    
-                } catch (error) {
-                    // Show error message
-                    alertContainer.innerHTML = `
-                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                            ${error.message}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                        </div>
-                    `;
-                }
-            });
-        });
-    </script>
+    <script src="/static/js/common.js"></script>
+    <script src="/static/js/register.js"></script>
 </body>
 </html>
