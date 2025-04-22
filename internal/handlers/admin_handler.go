@@ -1,3 +1,4 @@
+// Package handlers provides HTTP request handlers for the application
 package handlers
 
 import (
@@ -10,12 +11,24 @@ import (
 	"github.com/th1enq/go-map/internal/services"
 )
 
+// Common response structure for errors
+type ErrorResponse struct {
+	Error string `json:"error"`
+}
+
+// Common response structure for success messages
+type SuccessResponse struct {
+	Message string `json:"message"`
+}
+
+// AdminHandler manages all admin-related HTTP endpoints
 type AdminHandler struct {
 	userService       *services.UserServices
 	locationService   *services.LocationServices
 	trajectoryService *services.TrajectoryServices
 }
 
+// NewAdminHandler creates a new AdminHandler with the required services
 func NewAdminHandler(userService *services.UserServices, locationService *services.LocationServices,
 	trajectoryService *services.TrajectoryServices) *AdminHandler {
 	return &AdminHandler{
@@ -25,66 +38,75 @@ func NewAdminHandler(userService *services.UserServices, locationService *servic
 	}
 }
 
-// Render admin page
+// ================ PAGE RENDERING ================
+
+// AdminPage renders the admin dashboard page
 func (h *AdminHandler) AdminPage(c *gin.Context) {
 	c.HTML(http.StatusOK, "admin.html", gin.H{
 		"title": "Admin Dashboard",
 	})
 }
 
-// USER MANAGEMENT
+// ================ USER MANAGEMENT ================
+
+// UserRequest represents the request body for user creation and updates
+type UserRequest struct {
+	Username string          `json:"username"`
+	Email    string          `json:"email"`
+	Password string          `json:"password"`
+	Role     models.UserRole `json:"role"`
+}
+
+// PaginatedUsersResponse represents the response for paginated users
+type PaginatedUsersResponse struct {
+	Users []models.User `json:"users"`
+	Total int64         `json:"total"`
+}
+
 // GetUsers returns all users with pagination
 func (h *AdminHandler) GetUsers(c *gin.Context) {
-	// Get pagination parameters
 	offset, limit := getPaginationParams(c)
 
-	// Get users with pagination
 	users, err := h.userService.GetUsersPaginated(offset, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get users"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get users"})
 		return
 	}
 
-	// Get total count
 	totalCount, err := h.userService.Count()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user count"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get user count"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"users": users,
-		"total": totalCount,
+	c.JSON(http.StatusOK, PaginatedUsersResponse{
+		Users: users,
+		Total: totalCount,
 	})
 }
 
+// GetUser returns a specific user by ID
 func (h *AdminHandler) GetUser(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
+	id, err := parseIDParam(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid user ID"})
 		return
 	}
 
-	user, err := h.userService.GetUserByID(uint(id))
+	user, err := h.userService.GetUserByID(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "User not found"})
 		return
 	}
 
 	c.JSON(http.StatusOK, user)
 }
 
+// CreateUser creates a new user
 func (h *AdminHandler) CreateUser(c *gin.Context) {
-	var userData struct {
-		Username string          `json:"username"`
-		Email    string          `json:"email"`
-		Password string          `json:"password"`
-		Role     models.UserRole `json:"role"`
-	}
-
+	var userData UserRequest
 	if err := c.ShouldBindJSON(&userData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
@@ -95,52 +117,46 @@ func (h *AdminHandler) CreateUser(c *gin.Context) {
 		Role:     userData.Role,
 	}
 
-	// Tạo hash password
+	// Hash the password
 	if err := user.SetPassword(userData.Password); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to hash password"})
 		return
 	}
 
 	userID, err := h.userService.Create(user)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
 	// Get the created user
 	createdUser, err := h.userService.GetUserByID(userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "User created but failed to retrieve"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "User created but failed to retrieve"})
 		return
 	}
 
 	c.JSON(http.StatusCreated, createdUser)
 }
 
+// UpdateUser updates an existing user
 func (h *AdminHandler) UpdateUser(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
+	id, err := parseIDParam(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid user ID"})
 		return
 	}
 
-	var userData struct {
-		Username string          `json:"username"`
-		Email    string          `json:"email"`
-		Password string          `json:"password"`
-		Role     models.UserRole `json:"role"`
-	}
-
+	var userData UserRequest
 	if err := c.ShouldBindJSON(&userData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
 	// Get the existing user
-	user, err := h.userService.GetUserByID(uint(id))
+	user, err := h.userService.GetUserByID(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "User not found"})
 		return
 	}
 
@@ -152,99 +168,108 @@ func (h *AdminHandler) UpdateUser(c *gin.Context) {
 	// Update password if provided
 	if userData.Password != "" {
 		if err := user.SetPassword(userData.Password); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to hash password"})
 			return
 		}
 	}
 
 	// Update user
 	if err := h.userService.Update(user); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update user"})
 		return
 	}
 
 	c.JSON(http.StatusOK, user)
 }
 
+// DeleteUser deletes a user by ID
 func (h *AdminHandler) DeleteUser(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
+	id, err := parseIDParam(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid user ID"})
 		return
 	}
 
-	if err := h.userService.Delete(uint(id)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user"})
+	if err := h.userService.Delete(id); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to delete user"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "User deleted successfully"})
+	c.JSON(http.StatusOK, SuccessResponse{Message: "User deleted successfully"})
 }
 
+// GetUserCount returns the total number of users
 func (h *AdminHandler) GetUserCount(c *gin.Context) {
 	count, err := h.userService.Count()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user count"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get user count"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"count": count})
 }
 
-// LOCATION MANAGEMENT
+// ================ LOCATION MANAGEMENT ================
+
+// LocationRequest represents the request body for location creation and updates
+type LocationRequest struct {
+	Name       string   `json:"name"`
+	Category   string   `json:"category"`
+	Latitude   float64  `json:"latitude"`
+	Longitude  float64  `json:"longitude"`
+	Tag        string   `json:"tag"`
+	Activities []string `json:"activities"`
+}
+
+// PaginatedLocationsResponse represents the response for paginated locations
+type PaginatedLocationsResponse struct {
+	Locations []models.Location `json:"locations"`
+	Total     int64             `json:"total"`
+}
+
+// GetLocations returns all locations with pagination
 func (h *AdminHandler) GetLocations(c *gin.Context) {
-	// Get pagination parameters
 	offset, limit := getPaginationParams(c)
 
-	// Get locations with pagination
 	locations, err := h.locationService.GetLocationsPaginated(offset, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get locations"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get locations"})
 		return
 	}
 
-	// Get total count
 	totalCount, err := h.locationService.GetLocationCount()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get location count"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get location count"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"locations": locations,
-		"total":     totalCount,
+	c.JSON(http.StatusOK, PaginatedLocationsResponse{
+		Locations: locations,
+		Total:     totalCount,
 	})
 }
 
+// GetLocation returns a specific location by ID
 func (h *AdminHandler) GetLocation(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
+	id, err := parseIDParam(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid location ID"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid location ID"})
 		return
 	}
 
-	location, err := h.locationService.GetByID(uint(id))
+	location, err := h.locationService.GetByID(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Location not found"})
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Location not found"})
 		return
 	}
 
 	c.JSON(http.StatusOK, location)
 }
 
+// CreateLocation creates a new location
 func (h *AdminHandler) CreateLocation(c *gin.Context) {
-	var locationData struct {
-		Name       string   `json:"name"`
-		Category   string   `json:"category"`
-		Latitude   float64  `json:"latitude"`
-		Longitude  float64  `json:"longitude"`
-		Tag        string   `json:"tag"`
-		Activities []string `json:"activities"`
-	}
-
+	var locationData LocationRequest
 	if err := c.ShouldBindJSON(&locationData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
@@ -256,46 +281,38 @@ func (h *AdminHandler) CreateLocation(c *gin.Context) {
 
 	id, err := h.locationService.Create(location)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create location"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to create location"})
 		return
 	}
 
 	// Get created location
 	createdLocation, err := h.locationService.GetByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Location created but failed to retrieve"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Location created but failed to retrieve"})
 		return
 	}
 
 	c.JSON(http.StatusCreated, createdLocation)
 }
 
+// UpdateLocation updates an existing location
 func (h *AdminHandler) UpdateLocation(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
+	id, err := parseIDParam(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid location ID"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid location ID"})
 		return
 	}
 
-	var locationData struct {
-		Name       string   `json:"name"`
-		Category   string   `json:"category"`
-		Latitude   float64  `json:"latitude"`
-		Longitude  float64  `json:"longitude"`
-		Tag        string   `json:"tag"`
-		Activities []string `json:"activities"`
-	}
-
+	var locationData LocationRequest
 	if err := c.ShouldBindJSON(&locationData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
 	// Get existing location
-	location, err := h.locationService.GetByID(uint(id))
+	location, err := h.locationService.GetByID(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Location not found"})
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Location not found"})
 		return
 	}
 
@@ -306,173 +323,152 @@ func (h *AdminHandler) UpdateLocation(c *gin.Context) {
 
 	// Update location
 	if err := h.locationService.Update(*location); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update location"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update location"})
 		return
 	}
 
 	c.JSON(http.StatusOK, location)
 }
 
+// DeleteLocation deletes a location by ID
 func (h *AdminHandler) DeleteLocation(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
+	id, err := parseIDParam(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid location ID"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid location ID"})
 		return
 	}
 
-	if err := h.locationService.Delete(uint(id)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete location"})
+	if err := h.locationService.Delete(id); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to delete location"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Location deleted successfully"})
+	c.JSON(http.StatusOK, SuccessResponse{Message: "Location deleted successfully"})
 }
 
+// GetLocationCount returns the total number of locations
 func (h *AdminHandler) GetLocationCount(c *gin.Context) {
 	locations, err := h.locationService.GetAll()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get location count"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get location count"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"count": len(locations)})
 }
 
-// TRAJECTORY MANAGEMENT
+// ================ TRAJECTORY MANAGEMENT ================
+
+// TrajectoryRequest represents the request body for trajectory creation
+type TrajectoryRequest struct {
+	UserID    uint             `json:"user_id"`
+	StartTime string           `json:"start_time"`
+	EndTime   string           `json:"end_time"`
+	Points    []map[string]any `json:"points"`
+}
+
+// TrajectoryUpdateRequest represents the request body for trajectory updates
+type TrajectoryUpdateRequest struct {
+	UserID    uint             `json:"user_id"`
+	StartTime time.Time        `json:"start_time"`
+	EndTime   time.Time        `json:"end_time"`
+	Points    []map[string]any `json:"points"`
+}
+
+// EnhancedTrajectory represents a trajectory with additional information
+type EnhancedTrajectory struct {
+	ID          uint      `json:"id"`
+	UserID      uint      `json:"user_id"`
+	UserName    string    `json:"user_name"`
+	StartTime   time.Time `json:"start_time"`
+	EndTime     time.Time `json:"end_time"`
+	PointsCount int       `json:"points_count"`
+}
+
+// PaginatedTrajectoriesResponse represents the response for paginated trajectories
+type PaginatedTrajectoriesResponse struct {
+	Trajectories []EnhancedTrajectory `json:"trajectories"`
+	Total        int64                `json:"total"`
+}
+
+// GetTrajectories returns all trajectories with pagination and enhanced information
 func (h *AdminHandler) GetTrajectories(c *gin.Context) {
-	// Get pagination parameters
 	offset, limit := getPaginationParams(c)
 
-	// Get trajectories with pagination
 	trajectories, err := h.trajectoryService.GetTrajectoriesPaginated(offset, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get trajectories"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get trajectories"})
 		return
 	}
 
-	// Get total count
 	totalCount, err := h.trajectoryService.GetTrajectoryCount()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get trajectory count"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get trajectory count"})
 		return
-	}
-
-	// Enhanced trajectories with user info
-	type EnhancedTrajectory struct {
-		ID          uint      `json:"id"`
-		UserID      uint      `json:"user_id"`
-		UserName    string    `json:"user_name"`
-		StartTime   time.Time `json:"start_time"`
-		EndTime     time.Time `json:"end_time"`
-		PointsCount int       `json:"points_count"`
 	}
 
 	enhancedTrajectories := make([]EnhancedTrajectory, 0, len(trajectories))
 	for _, t := range trajectories {
-		user, _ := h.userService.GetUserByID(t.UserID)
-		userName := ""
-		if user != nil {
-			userName = user.Username
-		}
-
-		pointsCount, _ := h.trajectoryService.GetTrajectoryPointsCount(t.ID)
-
-		enhancedTrajectory := EnhancedTrajectory{
-			ID:          t.ID,
-			UserID:      t.UserID,
-			UserName:    userName,
-			StartTime:   t.StartTime,
-			EndTime:     t.EndTime,
-			PointsCount: pointsCount,
-		}
-
+		enhancedTrajectory, _ := h.enhanceTrajectory(t)
 		enhancedTrajectories = append(enhancedTrajectories, enhancedTrajectory)
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"trajectories": enhancedTrajectories,
-		"total":        totalCount,
+	c.JSON(http.StatusOK, PaginatedTrajectoriesResponse{
+		Trajectories: enhancedTrajectories,
+		Total:        totalCount,
 	})
 }
 
+// GetTrajectory returns a specific trajectory by ID with enhanced information
 func (h *AdminHandler) GetTrajectory(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
+	id, err := parseIDParam(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid trajectory ID"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid trajectory ID"})
 		return
 	}
 
-	trajectory, err := h.trajectoryService.GetByID(uint(id))
+	trajectory, err := h.trajectoryService.GetByID(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Trajectory not found"})
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Trajectory not found"})
 		return
 	}
 
-	// Get user info
-	user, _ := h.userService.GetUserByID(trajectory.UserID)
-	userName := ""
-	if user != nil {
-		userName = user.Username
+	enhancedTrajectory, err := h.enhanceTrajectory(*trajectory)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to enhance trajectory data"})
+		return
 	}
 
-	// Get points count
-	pointsCount, _ := h.trajectoryService.GetTrajectoryPointsCount(trajectory.ID)
-
-	// Enhanced trajectory response
-	response := struct {
-		ID          uint      `json:"id"`
-		UserID      uint      `json:"user_id"`
-		UserName    string    `json:"user_name"`
-		StartTime   time.Time `json:"start_time"`
-		EndTime     time.Time `json:"end_time"`
-		PointsCount int       `json:"points_count"`
-	}{
-		ID:          trajectory.ID,
-		UserID:      trajectory.UserID,
-		UserName:    userName,
-		StartTime:   trajectory.StartTime,
-		EndTime:     trajectory.EndTime,
-		PointsCount: pointsCount,
-	}
-
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, enhancedTrajectory)
 }
 
+// GetTrajectoryPoints returns all points for a specific trajectory
 func (h *AdminHandler) GetTrajectoryPoints(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
+	id, err := parseIDParam(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid trajectory ID"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid trajectory ID"})
 		return
 	}
 
-	points, err := h.trajectoryService.GetTrajectoryPoints(uint(id))
+	points, err := h.trajectoryService.GetTrajectoryPoints(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Trajectory points not found"})
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Trajectory points not found"})
 		return
 	}
 
 	c.JSON(http.StatusOK, points)
 }
 
+// CreateTrajectory creates a new trajectory
 func (h *AdminHandler) CreateTrajectory(c *gin.Context) {
-	var trajectoryData struct {
-		UserID    uint             `json:"user_id"`
-		StartTime string           `json:"start_time"`
-		EndTime   string           `json:"end_time"`
-		Points    []map[string]any `json:"points"`
-	}
-
+	var trajectoryData TrajectoryRequest
 	if err := c.ShouldBindJSON(&trajectoryData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
 	// Check if user exists
-	_, err := h.userService.GetUserByID(trajectoryData.UserID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "User not found"})
+	if _, err := h.userService.GetUserByID(trajectoryData.UserID); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "User not found"})
 		return
 	}
 
@@ -484,44 +480,37 @@ func (h *AdminHandler) CreateTrajectory(c *gin.Context) {
 		trajectoryData.Points,
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create trajectory: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to create trajectory: " + err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusCreated, trajectory)
 }
 
+// UpdateTrajectory updates an existing trajectory
 func (h *AdminHandler) UpdateTrajectory(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
+	id, err := parseIDParam(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid trajectory ID"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid trajectory ID"})
 		return
 	}
 
-	var trajectoryData struct {
-		UserID    uint             `json:"user_id"`
-		StartTime time.Time        `json:"start_time"`
-		EndTime   time.Time        `json:"end_time"`
-		Points    []map[string]any `json:"points"`
-	}
-
+	var trajectoryData TrajectoryUpdateRequest
 	if err := c.ShouldBindJSON(&trajectoryData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
 	// Check if trajectory exists
-	trajectory, err := h.trajectoryService.GetByID(uint(id))
+	trajectory, err := h.trajectoryService.GetByID(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Trajectory not found"})
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Trajectory not found"})
 		return
 	}
 
 	// Check if user exists
-	_, err = h.userService.GetUserByID(trajectoryData.UserID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "User not found"})
+	if _, err = h.userService.GetUserByID(trajectoryData.UserID); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "User not found"})
 		return
 	}
 
@@ -531,39 +520,75 @@ func (h *AdminHandler) UpdateTrajectory(c *gin.Context) {
 	trajectory.EndTime = trajectoryData.EndTime
 
 	if err := h.trajectoryService.UpdateTrajectory(trajectory, trajectoryData.Points); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update trajectory: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update trajectory: " + err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, trajectory)
 }
 
+// DeleteTrajectory deletes a trajectory by ID
 func (h *AdminHandler) DeleteTrajectory(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
+	id, err := parseIDParam(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid trajectory ID"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid trajectory ID"})
 		return
 	}
 
-	if err := h.trajectoryService.Delete(uint(id)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete trajectory"})
+	if err := h.trajectoryService.Delete(id); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to delete trajectory"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Trajectory deleted successfully"})
+	c.JSON(http.StatusOK, SuccessResponse{Message: "Trajectory deleted successfully"})
 }
 
+// GetTrajectoryCount returns the total number of trajectories
 func (h *AdminHandler) GetTrajectoryCount(c *gin.Context) {
 	count, err := h.trajectoryService.Count()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get trajectory count"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get trajectory count"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"count": count})
 }
 
-// Utility function to get pagination parameters from request
+// ================ HELPER METHODS ================
+
+// enhanceTrajectory adds additional information to a trajectory
+func (h *AdminHandler) enhanceTrajectory(trajectory models.Trajectory) (EnhancedTrajectory, error) {
+	user, _ := h.userService.GetUserByID(trajectory.UserID)
+	userName := ""
+	if user != nil {
+		userName = user.Username
+	}
+
+	pointsCount, err := h.trajectoryService.GetTrajectoryPointsCount(trajectory.ID)
+	if err != nil {
+		return EnhancedTrajectory{}, err
+	}
+
+	return EnhancedTrajectory{
+		ID:          trajectory.ID,
+		UserID:      trajectory.UserID,
+		UserName:    userName,
+		StartTime:   trajectory.StartTime,
+		EndTime:     trajectory.EndTime,
+		PointsCount: pointsCount,
+	}, nil
+}
+
+// parseIDParam extracts and validates the ID parameter from the request
+func parseIDParam(c *gin.Context) (uint, error) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return uint(id), nil
+}
+
+// getPaginationParams extracts pagination parameters from the request
 func getPaginationParams(c *gin.Context) (int, int) {
 	// Default pagination values
 	offset := 0

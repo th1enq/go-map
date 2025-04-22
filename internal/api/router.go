@@ -119,7 +119,7 @@ func SetupNewRouter(db *db.DB, JwtSescret string) *gin.Engine {
 		protectedLocation.Use(jwtMiddleware)
 		{
 			protectedLocation.GET("/rcm/hot", recommendationHandler.RecommendByHotStayPoint)
-			protectedLocation.GET("/rcm/same/:id", recommendationHandler.RecommendBySameTracjectory)
+			protectedLocation.GET("/rcm/same/:id", recommendationHandler.RecommendBySameTrajectory)
 		}
 	}
 

@@ -2,14 +2,14 @@
 -- Create locations table to store points of interest
 CREATE TABLE locations (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    user_id INTEGER,
     latitude DOUBLE PRECISION NOT NULL,
     longitude DOUBLE PRECISION NOT NULL,
     name TEXT NOT NULL,
     description TEXT,
     category TEXT NOT NULL, -- Possible values: 'travel', 'restaurant', 'entertainment', 'sport', 'education'
     visit_count INTEGER DEFAULT 0,
-    cluster_id INTEGER 
+    cluster_id INTEGER, 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );

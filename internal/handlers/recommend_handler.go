@@ -1,3 +1,4 @@
+// Package handlers provides HTTP request handlers for the application
 package handlers
 
 import (
@@ -8,62 +9,148 @@ import (
 	"github.com/th1enq/go-map/internal/services"
 )
 
+// RecommendHandler handles location recommendation requests
 type RecommendHandler struct {
-	recommendServices *services.RecommendationService
+	recommendService *services.RecommendationService
 }
 
+// RecommendationParams represents common recommendation parameters
+type RecommendationParams struct {
+	Latitude  float64
+	Longitude float64
+	Radius    float64
+}
+
+// NewRecommendHandler creates a new instance of RecommendHandler
 func NewRecommendHandler(r *services.RecommendationService) *RecommendHandler {
 	return &RecommendHandler{
-		recommendServices: r}
+		recommendService: r,
+	}
 }
 
+// RecommendByHotStayPoint recommends locations based on popular stay points near coordinates
 func (r *RecommendHandler) RecommendByHotStayPoint(c *gin.Context) {
-	latStr := c.Query("lat")
-	lngStr := c.Query("lng")
-
-	if latStr == "" || lngStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "lat, lng, and activity are required"})
+	params, err := extractCoordinateParams(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	lat, err := strconv.ParseFloat(latStr, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid latitude"})
-		return
-	}
-
-	lng, err := strconv.ParseFloat(lngStr, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid longitude"})
-		return
+	// Default radius if not specified
+	radius := params.Radius
+	if radius == 0 {
+		radius = 0.5 // Default radius in kilometers
 	}
 
 	// Call the service
-	locations, err := r.recommendServices.GetNearByCluster(lat, lng, 0.5)
+	locations, err := r.recommendService.GetNearByCluster(
+		params.Latitude,
+		params.Longitude,
+		radius,
+	)
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
+
 	c.JSON(http.StatusOK, locations)
 }
 
-func (r *RecommendHandler) RecommendBySameTracjectory(c *gin.Context) {
-	userIdStr := c.Param("id")
-	userID, err := strconv.ParseUint(userIdStr, 10, 0)
+// RecommendBySameTrajectory recommends locations based on similar user trajectories
+func (r *RecommendHandler) RecommendBySameTrajectory(c *gin.Context) {
+	userIDStr := c.Param("id")
+	userID, err := strconv.ParseUint(userIDStr, 10, 0)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid user ID"})
 		return
 	}
-	clusters, err := r.recommendServices.GetRecommendations(uint(userID), 1, 0.7, 5)
+
+	// Default parameters for recommendation
+	clusterLevel := 1
+	similarityThreshold := 0.5
+	maxResults := 5
+
+	// Get custom parameters if provided
+	levelStr := c.Query("level")
+	if levelStr != "" {
+		if level, err := strconv.Atoi(levelStr); err == nil && level > 0 {
+			clusterLevel = level
+		}
+	}
+
+	thresholdStr := c.Query("threshold")
+	if thresholdStr != "" {
+		if threshold, err := strconv.ParseFloat(thresholdStr, 64); err == nil && threshold > 0 && threshold <= 1 {
+			similarityThreshold = threshold
+		}
+	}
+
+	limitStr := c.Query("limit")
+	if limitStr != "" {
+		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 {
+			maxResults = limit
+		}
+	}
+
+	// Get recommendations based on trajectory similarity
+	clusters, err := r.recommendService.GetRecommendations(
+		uint(userID),
+		uint(clusterLevel),
+		similarityThreshold,
+		maxResults,
+	)
+
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot get recommendations"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Cannot get recommendations: " + err.Error()})
 		return
 	}
-	locations, err := r.recommendServices.FixLocations(clusters)
+
+	// Enhance location data with additional information
+	locations, err := r.recommendService.FixLocations(clusters)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot fix locations name"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Cannot enhance location information: " + err.Error()})
 		return
 	}
+
 	c.JSON(http.StatusOK, locations)
+}
+
+// extractCoordinateParams parses and validates coordinate parameters from the request
+func extractCoordinateParams(c *gin.Context) (RecommendationParams, error) {
+	params := RecommendationParams{}
+
+	// Extract latitude
+	latStr := c.Query("lat")
+	if latStr == "" {
+		return params, &ValidationError{Field: "lat", Message: "latitude is required"}
+	}
+	lat, err := strconv.ParseFloat(latStr, 64)
+	if err != nil {
+		return params, &ValidationError{Field: "lat", Message: "invalid latitude format"}
+	}
+	params.Latitude = lat
+
+	// Extract longitude
+	lngStr := c.Query("lng")
+	if lngStr == "" {
+		return params, &ValidationError{Field: "lng", Message: "longitude is required"}
+	}
+	lng, err := strconv.ParseFloat(lngStr, 64)
+	if err != nil {
+		return params, &ValidationError{Field: "lng", Message: "invalid longitude format"}
+	}
+	params.Longitude = lng
+
+	// Extract optional radius
+	radiusStr := c.Query("radius")
+	if radiusStr != "" {
+		radius, err := strconv.ParseFloat(radiusStr, 64)
+		if err != nil {
+			return params, &ValidationError{Field: "radius", Message: "invalid radius format"}
+		}
+		params.Radius = radius
+	}
+
+	return params, nil
 }

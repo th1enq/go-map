@@ -1,8 +1,9 @@
+// Package handlers provides HTTP request handlers for the application
 package handlers
 
 import (
-	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -10,10 +11,12 @@ import (
 	"github.com/th1enq/go-map/internal/services"
 )
 
+// LocationHandler handles location-related HTTP requests
 type LocationHandler struct {
 	locationService *services.LocationServices
 }
 
+// CreateLocationRequest represents the request body for location creation
 type CreateLocationRequest struct {
 	Name        string                  `json:"name" binding:"required"`
 	Latitude    float64                 `json:"latitude" binding:"required"`
@@ -22,6 +25,26 @@ type CreateLocationRequest struct {
 	Category    models.LocationCategory `json:"category" binding:"required"`
 }
 
+// LocationResponse represents a location in the response
+type LocationResponse struct {
+	ID          uint                    `json:"id"`
+	Name        string                  `json:"name"`
+	Latitude    float64                 `json:"latitude"`
+	Longitude   float64                 `json:"longitude"`
+	Description string                  `json:"description"`
+	Category    models.LocationCategory `json:"category"`
+	UserID      uint                    `json:"user_id"`
+	CreatedAt   time.Time               `json:"created_at"`
+	UpdatedAt   time.Time               `json:"updated_at"`
+}
+
+// LocationsResponse represents a paginated response containing locations
+type LocationsResponse struct {
+	Locations []models.Location `json:"locations"`
+	Total     int64               `json:"total"`
+}
+
+// NewLocationHandler creates a new instance of LocationHandler
 func NewLocationHandler(locationService *services.LocationServices) *LocationHandler {
 	return &LocationHandler{
 		locationService: locationService,
@@ -32,18 +55,14 @@ func NewLocationHandler(locationService *services.LocationServices) *LocationHan
 func (h *LocationHandler) CreateLocation(c *gin.Context) {
 	var req CreateLocationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
 	// Get user ID from context (set by JWT middleware)
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Unauthorized",
-		})
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized"})
 		return
 	}
 
@@ -61,9 +80,7 @@ func (h *LocationHandler) CreateLocation(c *gin.Context) {
 
 	// Save the location
 	if err := h.locationService.CreateLocation(location); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to create location",
-		})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to create location"})
 		return
 	}
 
@@ -78,50 +95,56 @@ func (h *LocationHandler) GetUserLocations(c *gin.Context) {
 	// Get user ID from context (set by JWT middleware)
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Unauthorized",
-		})
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized"})
 		return
 	}
 
 	// Get pagination parameters
-	offset := 0
-	limit := 10 // Default limit of 10 items per page
-
-	// Parse offset parameter
-	if offsetParam := c.Query("offset"); offsetParam != "" {
-		if _, err := fmt.Sscanf(offsetParam, "%d", &offset); err != nil || offset < 0 {
-			offset = 0
-		}
-	}
-
-	// Parse limit parameter
-	if limitParam := c.Query("limit"); limitParam != "" {
-		if _, err := fmt.Sscanf(limitParam, "%d", &limit); err != nil || limit <= 0 {
-			limit = 10
-		}
-	}
+	offset, limit := h.getPaginationParams(c)
 
 	// Get total count of locations for the user
 	total, err := h.locationService.GetUserLocationsCount(userID.(uint))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to count locations",
-		})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to count locations"})
 		return
 	}
 
 	// Get paginated locations for user
 	locations, err := h.locationService.GetByUserPaginated(userID.(uint), offset, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to get locations",
-		})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get locations"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"locations": locations,
-		"total":     total,
+	c.JSON(http.StatusOK, LocationsResponse{
+		Locations: locations,
+		Total:     total,
 	})
+}
+
+// getPaginationParams extracts pagination parameters from the request
+func (h *LocationHandler) getPaginationParams(c *gin.Context) (int, int) {
+	// Default pagination values
+	offset := 0
+	limit := 10 // Default limit of 10 items per page
+
+	// Parse offset parameter
+	offsetParam := c.Query("offset")
+	if offsetParam != "" {
+		parsedOffset, err := strconv.Atoi(offsetParam)
+		if err == nil && parsedOffset >= 0 {
+			offset = parsedOffset
+		}
+	}
+
+	// Parse limit parameter
+	limitParam := c.Query("limit")
+	if limitParam != "" {
+		parsedLimit, err := strconv.Atoi(limitParam)
+		if err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	return offset, limit
 }

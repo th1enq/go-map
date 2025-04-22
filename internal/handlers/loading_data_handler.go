@@ -1,3 +1,4 @@
+// Package handlers provides HTTP request handlers for the application
 package handlers
 
 import (
@@ -16,43 +17,47 @@ import (
 	"gorm.io/datatypes"
 )
 
+// LoadingDataHandler handles the loading and processing of trajectory data
 type LoadingDataHandler struct {
-	*services.TrajectoryServices
-	*services.StayPointServices
-	*services.UserServices
+	trajectoryService *services.TrajectoryServices
+	stayPointService  *services.StayPointServices
+	userService       *services.UserServices
 }
 
-func NewLoadingDataHandler(t *services.TrajectoryServices, s *services.StayPointServices, u *services.UserServices) *LoadingDataHandler {
-	return &LoadingDataHandler{t, s, u}
+// NewLoadingDataHandler creates a new instance of LoadingDataHandler
+func NewLoadingDataHandler(
+	trajectoryService *services.TrajectoryServices,
+	stayPointService *services.StayPointServices,
+	userService *services.UserServices,
+) *LoadingDataHandler {
+	return &LoadingDataHandler{
+		trajectoryService: trajectoryService,
+		stayPointService:  stayPointService,
+		userService:       userService,
+	}
 }
 
+// LoadGeolifeData loads trajectory data from the Geolife dataset
 func (l *LoadingDataHandler) LoadGeolifeData(dataDir string) error {
-	// Kiểm tra thư mục dữ liệu
+	// Check if the data directory exists
 	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
 		return fmt.Errorf("data directory not found: %s", dataDir)
 	}
 
-	// Duyệt qua các thư mục người dùng
+	// Iterate through user directories
 	userDirs, err := os.ReadDir(filepath.Join(dataDir, "Data"))
 	if err != nil {
 		return fmt.Errorf("error reading Data directory: %w", err)
 	}
-
-	// cnt := 0
 
 	for _, userDir := range userDirs {
 		if !userDir.IsDir() {
 			continue
 		}
 
-		// cnt++
-		// if cnt == 2 {
-		// 	break
-		// }
-
 		userFolder := userDir.Name()
-		// Tạo hoặc tìm user tương ứng trong database
-		user, err := l.UserServices.FindOrCreateByFolder(userFolder)
+		// Create or find corresponding user in the database
+		user, err := l.userService.FindOrCreateByFolder(userFolder)
 		if err != nil {
 			if err.Error() == "user data already imported" {
 				fmt.Printf("Skipping user %s: data already imported\n", userFolder)
@@ -92,7 +97,7 @@ func (l *LoadingDataHandler) LoadGeolifeData(dataDir string) error {
 	return nil
 }
 
-// Xử lý một file PLT
+// processPLTFile processes a single PLT file and extracts trajectory data
 func (l *LoadingDataHandler) processPLTFile(filePath string, userID uint) error {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -102,7 +107,7 @@ func (l *LoadingDataHandler) processPLTFile(filePath string, userID uint) error 
 
 	scanner := bufio.NewScanner(file)
 
-	// Bỏ qua 6 dòng đầu (header)
+	// Skip first 6 lines (header)
 	for i := 0; i < 6; i++ {
 		if !scanner.Scan() {
 			return fmt.Errorf("file too short, cannot skip header")
@@ -112,7 +117,7 @@ func (l *LoadingDataHandler) processPLTFile(filePath string, userID uint) error 
 	var points []models.GPSPoint
 	var startTime, endTime time.Time
 
-	// Đọc dữ liệu
+	// Read data
 	for scanner.Scan() {
 		line := scanner.Text()
 		fields := strings.Split(line, ",")
@@ -152,7 +157,7 @@ func (l *LoadingDataHandler) processPLTFile(filePath string, userID uint) error 
 
 		points = append(points, point)
 
-		// Cập nhật thời gian bắt đầu và kết thúc
+		// Update start and end times
 		if startTime.IsZero() || timestamp.Before(startTime) {
 			startTime = timestamp
 		}
@@ -165,13 +170,13 @@ func (l *LoadingDataHandler) processPLTFile(filePath string, userID uint) error 
 		return nil
 	}
 
-	// Chuyển points sang JSON
+	// Convert points to JSON
 	pointsJSON, err := json.Marshal(points)
 	if err != nil {
 		return err
 	}
 
-	// Tạo quỹ đạo mới
+	// Create new trajectory
 	trajectory := models.Trajectory{
 		UserID:    userID,
 		Points:    datatypes.JSON(pointsJSON),
@@ -179,25 +184,25 @@ func (l *LoadingDataHandler) processPLTFile(filePath string, userID uint) error 
 		EndTime:   endTime,
 	}
 
-	// Lưu quỹ đạo vào database
-	trajectoryID, err := l.TrajectoryServices.Create(trajectory)
+	// Save trajectory to database
+	trajectoryID, err := l.trajectoryService.Create(trajectory)
 	if err != nil {
 		return err
 	}
 
-	// Cập nhật ID
+	// Update ID
 	trajectory.ID = trajectoryID
 
-	// Phát hiện các điểm lưu trú
+	// Detect stay points
 	stayPoints := algorithms.StayPointDetection(
 		trajectory,
-		200,            // 200m ngưỡng khoảng cách
-		30*time.Minute, // 30 phút ngưỡng thời gian
+		200,            // 200m distance threshold
+		30*time.Minute, // 30 minutes time threshold
 	)
 
-	// Lưu các điểm lưu trú vào DB
+	// Save stay points to database
 	if len(stayPoints) > 0 {
-		err = l.StayPointServices.BatchCreate(stayPoints)
+		err = l.stayPointService.BatchCreate(stayPoints)
 		if err != nil {
 			fmt.Printf("Error saving stay points: %v\n", err)
 		}

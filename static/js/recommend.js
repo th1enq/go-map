@@ -807,8 +807,10 @@ async function recommendBySimilarTrajectories() {
         const lat = selectedLocation.lat;
         const lng = selectedLocation.lng;
         
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+
         // Lấy các địa điểm gần vị trí đã chọn
-        const response = await fetch('/api/location/rcm/same/4', {
+        const response = await fetch(`/api/location/rcm/same/${user.id}`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',

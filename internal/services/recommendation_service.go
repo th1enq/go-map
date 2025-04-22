@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"sort"
@@ -521,6 +522,8 @@ func (s *RecommendationService) GetRecommendations(
 	if err != nil {
 		return nil, err
 	}
+
+	log.Println(len(potentialFriends))
 
 	// Step 2: Get clusters visited by the query user
 	var userClusters []models.Cluster

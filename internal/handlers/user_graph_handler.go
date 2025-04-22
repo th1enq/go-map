@@ -1,3 +1,4 @@
+// Package handlers provides HTTP request handlers for the application
 package handlers
 
 import (
@@ -9,11 +10,13 @@ import (
 	"github.com/th1enq/go-map/internal/services"
 )
 
+// UserGraphHandler handles the creation and management of hierarchical user graphs
 type UserGraphHandler struct {
 	frameworkService *services.HierarchicalFrameworkService
 	stayPointService *services.StayPointServices
 }
 
+// NewUserGraphHandler creates a new instance of UserGraphHandler
 func NewUserGraphHandler(
 	frameworkService *services.HierarchicalFrameworkService,
 	stayPointService *services.StayPointServices,
@@ -48,7 +51,8 @@ func (h *UserGraphHandler) BuildUserGraph(userID uint) error {
 		return nil
 	}
 
-	framework := frameworks[len(frameworks)-1] // Use the latest framework
+	// Use the latest framework
+	framework := frameworks[len(frameworks)-1]
 
 	// Create a new hierarchical graph for the user
 	graph, err := h.frameworkService.CreateHierarchicalGraph(userID, framework.ID)
@@ -58,7 +62,11 @@ func (h *UserGraphHandler) BuildUserGraph(userID uint) error {
 
 	// Process stay points in chronological order
 	// First, group nearby stay points
-	groups, err := h.stayPointService.GroupNearbyStayPoints(userID, 200, 24*time.Hour)
+	groups, err := h.stayPointService.GroupNearbyStayPoints(
+		userID,
+		200,          // 200 meters distance threshold
+		24*time.Hour, // 24 hours time threshold
+	)
 	if err != nil {
 		return err
 	}
@@ -77,7 +85,7 @@ func (h *UserGraphHandler) BuildUserGraph(userID uint) error {
 		}
 
 		if cluster == nil {
-			log.Printf("cluseter if null")
+			log.Printf("Cluster is null")
 			continue
 		}
 
@@ -104,13 +112,7 @@ func (h *UserGraphHandler) BuildUserGraph(userID uint) error {
 	}
 
 	// Sort nodes by first visit time
-	for i := 0; i < len(nodes)-1; i++ {
-		for j := i + 1; j < len(nodes); j++ {
-			if nodes[i].FirstVisitAt.After(nodes[j].FirstVisitAt) {
-				nodes[i], nodes[j] = nodes[j], nodes[i]
-			}
-		}
-	}
+	sortNodesByFirstVisit(nodes)
 
 	// Create edges between consecutive nodes
 	for i := 0; i < len(nodes)-1; i++ {
@@ -151,4 +153,15 @@ func (h *UserGraphHandler) findBestCluster(stayPoints []models.StayPoint, framew
 	}
 
 	return bestCluster, nil
+}
+
+// sortNodesByFirstVisit sorts an array of nodes by their first visit time
+func sortNodesByFirstVisit(nodes []models.GraphNode) {
+	for i := 0; i < len(nodes)-1; i++ {
+		for j := i + 1; j < len(nodes); j++ {
+			if nodes[i].FirstVisitAt.After(nodes[j].FirstVisitAt) {
+				nodes[i], nodes[j] = nodes[j], nodes[i]
+			}
+		}
+	}
 }
