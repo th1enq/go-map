@@ -166,112 +166,224 @@ func (r *RecommendationService) GetNearByCluster(lat, lng, radiusKm float64) ([]
 		return nil, err
 	}
 
+	return r.ProcessClustersToLocations(clusters)
+}
+
+// processClustersToLocations converts a list of clusters to locations, fetching names from API when needed
+func (r *RecommendationService) ProcessClustersToLocations(clusters []models.Cluster) ([]models.Location, error) {
 	locations := make([]models.Location, 0)
 
 	for _, cluster := range clusters {
 		var existingLocation models.Location
-		dbResult := r.db.Where("cluster_id = ? and name is not null", cluster.ID).First(&existingLocation)
+		dbResult := r.db.Where("cluster_id = ?", cluster.ID).First(&existingLocation)
 
 		if dbResult.Error == nil {
-			// Location exists, add it to results
-			locations = append(locations, existingLocation)
-			continue
-		}
-
-		// Location doesn't exist, query Nominatim API
-		baseURL := "https://nominatim.openstreetmap.org/reverse"
-		params := url.Values{}
-		params.Add("format", "json")
-		params.Add("lat", fmt.Sprintf("%f", cluster.CenterLat))
-		params.Add("lon", fmt.Sprintf("%f", cluster.CenterLng))
-		params.Add("zoom", "18")            // Maximum zoom level for most detailed results
-		params.Add("namedetails", "1")      // Include alternative names
-		params.Add("accept-language", "en") // Request English names
-
-		req, err := http.NewRequest("GET", baseURL+"?"+params.Encode(), nil)
-		if err != nil {
-			continue
-		}
-
-		// Add headers to request
-		req.Header.Add("Accept-Language", "en")
-		req.Header.Add("User-Agent", "Go-Map-App")
-
-		client := &http.Client{}
-		resp, err := client.Do(req)
-		if err != nil {
-			continue // Skip this cluster if API fails
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			continue
-		}
-
-		var nominatimResult struct {
-			PlaceID     int64   `json:"place_id"`
-			License     string  `json:"licence"`
-			OsmType     string  `json:"osm_type"`
-			OsmID       int64   `json:"osm_id"`
-			Lat         string  `json:"lat"`
-			Lon         string  `json:"lon"`
-			Class       string  `json:"class"`
-			Type        string  `json:"type"`
-			PlaceRank   int     `json:"place_rank"`
-			Importance  float64 `json:"importance"`
-			AddressType string  `json:"addresstype"`
-			Name        string  `json:"name"`
-			DisplayName string  `json:"display_name"`
-			Namedetails struct {
-				NameEn string `json:"name:en"`
-			} `json:"namedetails"`
-			Address struct {
-				Amenity      string `json:"amenity"`
-				HouseNumber  string `json:"house_number"`
-				Road         string `json:"road"`
-				CityDistrict string `json:"city_district"`
-				City         string `json:"city"`
-				State        string `json:"state"`
-				Postcode     string `json:"postcode"`
-				Country      string `json:"country"`
-				CountryCode  string `json:"country_code"`
-			} `json:"address"`
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&nominatimResult); err != nil {
-			continue
-		}
-
-		// Only create location if we got a name
-		if nominatimResult.Name != "" {
-			// Use English name if available, otherwise use the default name
-			name := nominatimResult.Name
-			if nominatimResult.Namedetails.NameEn != "" {
-				name = nominatimResult.Namedetails.NameEn
-			}
-
-			// Create new location
-			newLocation := models.Location{
-				Latitude:    cluster.CenterLat,
-				Longitude:   cluster.CenterLng,
-				Name:        name,
-				Description: nominatimResult.DisplayName,
-				Category:    models.LocationCategory("travel"), // Default category
-				ClusterID:   cluster.ID,
-				VisitCount:  cluster.VisitCount,
-			}
-
-			// Save to database
-			_, err := r.locationSvc.Create(newLocation)
-			if err != nil {
+			// Location exists in database
+			if existingLocation.Name != "" {
+				// Name already exists, add to results
+				locations = append(locations, existingLocation)
 				continue
+			} else {
+				// Location exists but name is empty, query API and update
+				updatedLocation, err := r.fetchAndUpdateLocationName(existingLocation, cluster.CenterLat, cluster.CenterLng)
+				if err == nil && updatedLocation.Name != "" {
+					locations = append(locations, updatedLocation)
+					continue
+				}
 			}
-
-			locations = append(locations, newLocation)
+		} else {
+			// Location doesn't exist, create new location with API data
+			newLocation, err := r.createLocationFromAPI(cluster)
+			if err == nil {
+				locations = append(locations, newLocation)
+			}
 		}
 	}
 
 	return locations, nil
+}
+
+// Helper function to fetch location name from API and update existing record
+func (r *RecommendationService) fetchAndUpdateLocationName(location models.Location, lat, lng float64) (models.Location, error) {
+	// Query Nominatim API
+	baseURL := "https://nominatim.openstreetmap.org/reverse"
+	params := url.Values{}
+	params.Add("format", "json")
+	params.Add("lat", fmt.Sprintf("%f", lat))
+	params.Add("lon", fmt.Sprintf("%f", lng))
+	params.Add("zoom", "18")            // Maximum zoom level for most detailed results
+	params.Add("namedetails", "1")      // Include alternative names
+	params.Add("accept-language", "en") // Request English names
+
+	req, err := http.NewRequest("GET", baseURL+"?"+params.Encode(), nil)
+	if err != nil {
+		return location, err
+	}
+
+	// Add headers to request
+	req.Header.Add("Accept-Language", "en")
+	req.Header.Add("User-Agent", "Go-Map-App")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return location, err // Return original location if API fails
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return location, fmt.Errorf("API returned status code %d", resp.StatusCode)
+	}
+
+	var nominatimResult struct {
+		PlaceID     int64   `json:"place_id"`
+		License     string  `json:"licence"`
+		OsmType     string  `json:"osm_type"`
+		OsmID       int64   `json:"osm_id"`
+		Lat         string  `json:"lat"`
+		Lon         string  `json:"lon"`
+		Class       string  `json:"class"`
+		Type        string  `json:"type"`
+		PlaceRank   int     `json:"place_rank"`
+		Importance  float64 `json:"importance"`
+		AddressType string  `json:"addresstype"`
+		Name        string  `json:"name"`
+		DisplayName string  `json:"display_name"`
+		Namedetails struct {
+			NameEn string `json:"name:en"`
+		} `json:"namedetails"`
+		Address struct {
+			Amenity      string `json:"amenity"`
+			HouseNumber  string `json:"house_number"`
+			Road         string `json:"road"`
+			CityDistrict string `json:"city_district"`
+			City         string `json:"city"`
+			State        string `json:"state"`
+			Postcode     string `json:"postcode"`
+			Country      string `json:"country"`
+			CountryCode  string `json:"country_code"`
+		} `json:"address"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&nominatimResult); err != nil {
+		return location, err
+	}
+
+	// Update location if we got a name
+	if nominatimResult.Name != "" {
+		// Use English name if available, otherwise use the default name
+		name := nominatimResult.Name
+		if nominatimResult.Namedetails.NameEn != "" {
+			name = nominatimResult.Namedetails.NameEn
+		}
+
+		// Update location
+		location.Name = name
+		location.Description = nominatimResult.DisplayName
+
+		// Save to database
+		if err := r.db.Save(&location).Error; err != nil {
+			return location, err
+		}
+	}
+
+	return location, nil
+}
+
+// Helper function to create a new location from API data
+func (r *RecommendationService) createLocationFromAPI(cluster models.Cluster) (models.Location, error) {
+	// Query Nominatim API
+	baseURL := "https://nominatim.openstreetmap.org/reverse"
+	params := url.Values{}
+	params.Add("format", "json")
+	params.Add("lat", fmt.Sprintf("%f", cluster.CenterLat))
+	params.Add("lon", fmt.Sprintf("%f", cluster.CenterLng))
+	params.Add("zoom", "18")            // Maximum zoom level for most detailed results
+	params.Add("namedetails", "1")      // Include alternative names
+	params.Add("accept-language", "en") // Request English names
+
+	req, err := http.NewRequest("GET", baseURL+"?"+params.Encode(), nil)
+	if err != nil {
+		return models.Location{}, err
+	}
+
+	// Add headers to request
+	req.Header.Add("Accept-Language", "en")
+	req.Header.Add("User-Agent", "Go-Map-App")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return models.Location{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return models.Location{}, fmt.Errorf("API returned status code %d", resp.StatusCode)
+	}
+
+	var nominatimResult struct {
+		PlaceID     int64   `json:"place_id"`
+		License     string  `json:"licence"`
+		OsmType     string  `json:"osm_type"`
+		OsmID       int64   `json:"osm_id"`
+		Lat         string  `json:"lat"`
+		Lon         string  `json:"lon"`
+		Class       string  `json:"class"`
+		Type        string  `json:"type"`
+		PlaceRank   int     `json:"place_rank"`
+		Importance  float64 `json:"importance"`
+		AddressType string  `json:"addresstype"`
+		Name        string  `json:"name"`
+		DisplayName string  `json:"display_name"`
+		Namedetails struct {
+			NameEn string `json:"name:en"`
+		} `json:"namedetails"`
+		Address struct {
+			Amenity      string `json:"amenity"`
+			HouseNumber  string `json:"house_number"`
+			Road         string `json:"road"`
+			CityDistrict string `json:"city_district"`
+			City         string `json:"city"`
+			State        string `json:"state"`
+			Postcode     string `json:"postcode"`
+			Country      string `json:"country"`
+			CountryCode  string `json:"country_code"`
+		} `json:"address"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&nominatimResult); err != nil {
+		return models.Location{}, err
+	}
+
+	// Only create location if we got a name
+	if nominatimResult.Name == "" {
+		return models.Location{}, fmt.Errorf("no name found for location")
+	}
+
+	// Use English name if available, otherwise use the default name
+	name := nominatimResult.Name
+	if nominatimResult.Namedetails.NameEn != "" {
+		name = nominatimResult.Namedetails.NameEn
+	}
+
+	// Create new location
+	newLocation := models.Location{
+		Latitude:    cluster.CenterLat,
+		Longitude:   cluster.CenterLng,
+		Name:        name,
+		Description: nominatimResult.DisplayName,
+		Category:    models.LocationCategory("travel"), // Default category
+		ClusterID:   cluster.ID,
+		VisitCount:  cluster.VisitCount,
+	}
+
+	// Save to database
+	if err := r.db.Create(&newLocation).Error; err != nil {
+		return models.Location{}, err
+	}
+
+	return newLocation, nil
 }
 
 // FindPotentialFriends finds users with high similarity scores
