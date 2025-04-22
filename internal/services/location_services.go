@@ -135,18 +135,9 @@ func (s *LocationServices) GetLocationByID(id uint) (*models.Location, error) {
 	return &location, nil
 }
 
-func (s *LocationServices) CreateLocation(name, category string, lat, lng float64, tag string, activities []string) (*models.Location, error) {
-	location := models.Location{
-		Name:      name,
-		Latitude:  lat,
-		Longitude: lng,
-	}
-
+func (s *LocationServices) CreateLocation(location *models.Location) error {
 	err := s.DB.Create(&location).Error
-	if err != nil {
-		return nil, err
-	}
-	return &location, nil
+	return err
 }
 
 func (s *LocationServices) UpdateLocation(location *models.Location) error {
@@ -161,4 +152,34 @@ func (s *LocationServices) GetLocationCount() (int64, error) {
 	var count int64
 	err := s.DB.Model(&models.Location{}).Count(&count).Error
 	return count, err
+}
+
+// GetByUserPaginated retrieves locations for a specific user with pagination
+func (s *LocationServices) GetByUserPaginated(userID uint, offset, limit int) ([]models.Location, error) {
+	var locations []models.Location
+	result := s.DB.Where("user_id = ?", userID).Offset(offset).Limit(limit).Order("created_at DESC").Find(&locations)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return locations, nil
+}
+
+// GetUserLocationsCount returns the total number of locations for a user
+func (s *LocationServices) GetUserLocationsCount(userID uint) (int64, error) {
+	var count int64
+	result := s.DB.Model(&models.Location{}).Where("user_id = ?", userID).Count(&count)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return count, nil
+}
+
+// GetLocationsPaginated returns locations with pagination
+func (s *LocationServices) GetLocationsPaginated(offset, limit int) ([]models.Location, error) {
+	var locations []models.Location
+	result := s.DB.Offset(offset).Limit(limit).Order("id ASC").Find(&locations)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return locations, nil
 }

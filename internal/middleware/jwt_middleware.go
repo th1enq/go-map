@@ -48,6 +48,14 @@ func JWTAuth(authService *services.AuthService) gin.HandlerFunc {
 		if !foundToken {
 			log.Println("[JWT Middleware] No token found in either header or cookie")
 
+			// Allow public pages to proceed without authentication
+			path := c.Request.URL.Path
+			if path == "/search" || strings.HasPrefix(path, "/api/location/search") {
+				log.Println("[JWT Middleware] Public page detected, allowing without authentication:", path)
+				c.Next()
+				return
+			}
+
 			// For HTML requests, redirect to login
 			if strings.Contains(c.GetHeader("Accept"), "text/html") {
 				log.Println("[JWT Middleware] Redirecting HTML request to login")

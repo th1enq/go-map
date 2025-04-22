@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initNavigation();
     initModals();
     loadDashboard();
+    initPaginationControls();
 
     // Add logout handler
     document.getElementById('logout-btn').addEventListener('click', function() {
@@ -38,6 +39,28 @@ document.addEventListener('DOMContentLoaded', function() {
         Auth.handleLogout();
     });
 });
+
+// Pagination state
+const pagination = {
+    users: {
+        currentPage: 1,
+        totalPages: 1,
+        itemsPerPage: 100,
+        totalItems: 0,
+    },
+    locations: {
+        currentPage: 1,
+        totalPages: 1,
+        itemsPerPage: 100,
+        totalItems: 0,
+    },
+    trajectories: {
+        currentPage: 1,
+        totalPages: 1,
+        itemsPerPage: 100,
+        totalItems: 0,
+    }
+};
 
 // Navigation handling
 function initNavigation() {
@@ -155,49 +178,118 @@ async function loadDashboard() {
     }
 }
 
-// Load users
+// Load users with pagination
 async function loadUsers() {
     console.log('[Admin] Loading users');
+    
+    // Show loading indicator
+    document.getElementById('users-loading').style.display = 'block';
+    document.getElementById('users-table-body').innerHTML = '';
+    
     try {
-        const users = await API.fetchWithAuth('/api/admin/users');
-        console.log('[Admin] Users data:', users);
+        // Calculate offset based on current page
+        const offset = (pagination.users.currentPage - 1) * pagination.users.itemsPerPage;
+        
+        // Fetch users with pagination parameters
+        const url = `/api/admin/users?offset=${offset}&limit=${pagination.users.itemsPerPage}`;
+        console.log('[Admin] Fetching users from:', url);
+        
+        const response = await API.fetchWithAuth(url);
+        console.log('[Admin] Users data response:', response);
+        
+        // Hide loading indicator
+        document.getElementById('users-loading').style.display = 'none';
+        
+        // Defensive programming - ensure response is something we can work with
+        if (!response) {
+            throw new Error('Empty response from server');
+        }
+        
+        // Extract users array from response
+        let users = [];
+        let total = 0;
+        
+        // Handle different response formats
+        if (response.users && Array.isArray(response.users)) {
+            users = response.users;
+            total = response.total || users.length;
+        } else if (Array.isArray(response)) {
+            users = response;
+            total = users.length;
+        } else if (typeof response === 'object' && response !== null) {
+            // If response is an object but not an array, check if any property contains an array
+            for (const key in response) {
+                if (Array.isArray(response[key])) {
+                    users = response[key];
+                    break;
+                }
+            }
+            total = response.total || users.length;
+        } else {
+            throw new Error('Invalid response format from server');
+        }
+        
+        // Ensure users is an array at this point
+        if (!Array.isArray(users)) {
+            console.error('[Admin] Failed to extract users array from response:', response);
+            users = []; // Set to empty array to avoid forEach errors
+        }
+        
+        // Update pagination state - safely
+        pagination.users.totalItems = total;
+        pagination.users.totalPages = Math.max(1, Math.ceil(pagination.users.totalItems / pagination.users.itemsPerPage));
+        
+        // Update pagination UI
+        updatePaginationUI('users');
         
         const tbody = document.getElementById('users-table-body');
         tbody.innerHTML = '';
         
-        users.forEach(user => {
+        if (users.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">No users found</td></tr>';
+            return;
+        }
+        
+        // Use traditional for loop instead of forEach for better error handling
+        for (let i = 0; i < users.length; i++) {
+            const user = users[i];
+            if (!user) continue; // Skip any null/undefined items
+            
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td>${user.id}</td>
+                <td>${user.id || 'N/A'}</td>
                 <td>${user.username || 'N/A'}</td>
                 <td>${user.email || 'N/A'}</td>
                 <td><span class="badge ${user.role === 'admin' ? 'bg-danger' : 'bg-primary'}">${user.role || 'user'}</span></td>
                 <td>${user.created_at ? new Date(user.created_at).toLocaleString() : 'N/A'}</td>
                 <td>
-                    <i class="bi bi-pencil-square action-btn edit-user" data-id="${user.id}"></i>
-                    <i class="bi bi-trash action-btn delete-user" data-id="${user.id}"></i>
+                    <i class="bi bi-pencil-square action-btn edit-user" data-id="${user.id || ''}"></i>
+                    <i class="bi bi-trash action-btn delete-user" data-id="${user.id || ''}"></i>
                 </td>
             `;
             tbody.appendChild(tr);
-        });
+        }
         
         // Add event listeners for edit and delete buttons
         document.querySelectorAll('.edit-user').forEach(btn => {
             btn.addEventListener('click', function() {
                 const id = this.getAttribute('data-id');
-                editUser(id);
+                if (id) editUser(id);
             });
         });
         
         document.querySelectorAll('.delete-user').forEach(btn => {
             btn.addEventListener('click', function() {
                 const id = this.getAttribute('data-id');
-                deleteUser(id);
+                if (id) deleteUser(id);
             });
         });
     } catch (error) {
         console.error('[Admin] Users load error:', error);
-        showAlert('Failed to load users', 'danger');
+        document.getElementById('users-loading').style.display = 'none';
+        document.getElementById('users-table-body').innerHTML = 
+            `<tr><td colspan="6" class="text-center text-danger">Failed to load users: ${error.message || 'Unknown error'}</td></tr>`;
+        showAlert(`Failed to load users: ${error.message || 'Unknown error'}`, 'danger');
     }
 }
 
@@ -306,33 +398,63 @@ async function saveUser() {
     }
 }
 
-// Load locations
+// Load locations with pagination
 async function loadLocations() {
     console.log('[Admin] Loading locations');
+    
+    // Show loading indicator
+    document.getElementById('locations-loading').style.display = 'block';
+    document.getElementById('locations-table-body').innerHTML = '';
+    
     try {
-        const locations = await API.fetchWithAuth('/api/admin/locations');
-        console.log('[Admin] Locations data:', locations);
+        // Calculate offset based on current page
+        const offset = (pagination.locations.currentPage - 1) * pagination.locations.itemsPerPage;
+        
+        // Fetch locations with pagination parameters
+        const response = await API.fetchWithAuth(`/api/admin/locations?offset=${offset}&limit=${pagination.locations.itemsPerPage}`);
+        console.log('[Admin] Locations data:', response);
+        
+        // Hide loading indicator
+        document.getElementById('locations-loading').style.display = 'none';
+        
+        // Update pagination state
+        pagination.locations.totalItems = response.total || response.locations.length;
+        pagination.locations.totalPages = Math.ceil(pagination.locations.totalItems / pagination.locations.itemsPerPage);
+        
+        // Update pagination UI
+        updatePaginationUI('locations');
+        
+        // Extract locations array from response
+        const locations = response.locations || response;
         
         const tbody = document.getElementById('locations-table-body');
         tbody.innerHTML = '';
+        
+        if (locations.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center">No locations found</td></tr>';
+            return;
+        }
         
         locations.forEach(location => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${location.id}</td>
-                <td>${location.name}</td>
-                <td>${location.address}</td>
-                <td>${location.latitude}</td>
-                <td>${location.longitude}</td>
+                <td>${location.name || 'N/A'}</td>
+                <td>${location.category || 'N/A'}</td>
+                <td>${location.latitude?.toFixed(6) || 'N/A'}</td>
+                <td>${location.longitude?.toFixed(6) || 'N/A'}</td>
+                <td>${location.user_id || 'N/A'}</td>
                 <td>
                     <i class="bi bi-pencil-square action-btn edit-location" data-id="${location.id}"></i>
                     <i class="bi bi-trash action-btn delete-location" data-id="${location.id}"></i>
+                    <i class="bi bi-geo-alt action-btn view-location" data-id="${location.id}" 
+                       data-lat="${location.latitude}" data-lng="${location.longitude}"></i>
                 </td>
             `;
             tbody.appendChild(tr);
         });
         
-        // Add event listeners for edit and delete buttons
+        // Add event listeners for edit, delete and view buttons
         document.querySelectorAll('.edit-location').forEach(btn => {
             btn.addEventListener('click', function() {
                 const id = this.getAttribute('data-id');
@@ -346,21 +468,60 @@ async function loadLocations() {
                 deleteLocation(id);
             });
         });
+        
+        document.querySelectorAll('.view-location').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const id = this.getAttribute('data-id');
+                const lat = this.getAttribute('data-lat');
+                const lng = this.getAttribute('data-lng');
+                window.open(`/search?lat=${lat}&lng=${lng}&zoom=18`, '_blank');
+            });
+        });
     } catch (error) {
         console.error('[Admin] Locations load error:', error);
+        document.getElementById('locations-loading').style.display = 'none';
+        document.getElementById('locations-table-body').innerHTML = 
+            '<tr><td colspan="7" class="text-center text-danger">Failed to load locations. Please try again.</td></tr>';
         showAlert('Failed to load locations', 'danger');
     }
 }
 
-// Load trajectories
+// Load trajectories with pagination
 async function loadTrajectories() {
     console.log('[Admin] Loading trajectories');
+    
+    // Show loading indicator
+    document.getElementById('trajectories-loading').style.display = 'block';
+    document.getElementById('trajectories-table-body').innerHTML = '';
+    
     try {
-        const trajectories = await API.fetchWithAuth('/api/admin/trajectories');
-        console.log('[Admin] Trajectories data:', trajectories);
+        // Calculate offset based on current page
+        const offset = (pagination.trajectories.currentPage - 1) * pagination.trajectories.itemsPerPage;
+        
+        // Fetch trajectories with pagination parameters
+        const response = await API.fetchWithAuth(`/api/admin/trajectories?offset=${offset}&limit=${pagination.trajectories.itemsPerPage}`);
+        console.log('[Admin] Trajectories data:', response);
+        
+        // Hide loading indicator
+        document.getElementById('trajectories-loading').style.display = 'none';
+        
+        // Update pagination state
+        pagination.trajectories.totalItems = response.total || response.trajectories.length;
+        pagination.trajectories.totalPages = Math.ceil(pagination.trajectories.totalItems / pagination.trajectories.itemsPerPage);
+        
+        // Update pagination UI
+        updatePaginationUI('trajectories');
+        
+        // Extract trajectories array from response
+        const trajectories = response.trajectories || response;
         
         const tbody = document.getElementById('trajectories-table-body');
         tbody.innerHTML = '';
+        
+        if (trajectories.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">No trajectories found</td></tr>';
+            return;
+        }
         
         trajectories.forEach(trajectory => {
             const tr = document.createElement('tr');
@@ -402,6 +563,9 @@ async function loadTrajectories() {
         });
     } catch (error) {
         console.error('[Admin] Trajectories load error:', error);
+        document.getElementById('trajectories-loading').style.display = 'none';
+        document.getElementById('trajectories-table-body').innerHTML = 
+            '<tr><td colspan="6" class="text-center text-danger">Failed to load trajectories. Please try again.</td></tr>';
         showAlert('Failed to load trajectories', 'danger');
     }
 }
@@ -418,4 +582,67 @@ function showAlert(message, type = 'success') {
     `;
     alertContainer.appendChild(alert);
     setTimeout(() => alert.remove(), 5000);
-} 
+}
+
+// Update pagination UI
+function updatePaginationUI(type) {
+    const state = pagination[type];
+    const startItem = (state.currentPage - 1) * state.itemsPerPage + 1;
+    const endItem = Math.min(startItem + state.itemsPerPage - 1, state.totalItems);
+    
+    // Update page info text
+    document.getElementById(`${type}-page-info`).textContent = 
+        `Showing ${startItem}-${endItem} of ${state.totalItems} ${type}`;
+    
+    // Enable/disable pagination buttons
+    document.getElementById(`${type}-prev-page`).disabled = state.currentPage <= 1;
+    document.getElementById(`${type}-next-page`).disabled = state.currentPage >= state.totalPages;
+}
+
+// Initialize pagination controls
+function initPaginationControls() {
+    // Users pagination
+    document.getElementById('users-prev-page').addEventListener('click', () => {
+        if (pagination.users.currentPage > 1) {
+            pagination.users.currentPage--;
+            loadUsers();
+        }
+    });
+    
+    document.getElementById('users-next-page').addEventListener('click', () => {
+        if (pagination.users.currentPage < pagination.users.totalPages) {
+            pagination.users.currentPage++;
+            loadUsers();
+        }
+    });
+    
+    // Locations pagination
+    document.getElementById('locations-prev-page').addEventListener('click', () => {
+        if (pagination.locations.currentPage > 1) {
+            pagination.locations.currentPage--;
+            loadLocations();
+        }
+    });
+    
+    document.getElementById('locations-next-page').addEventListener('click', () => {
+        if (pagination.locations.currentPage < pagination.locations.totalPages) {
+            pagination.locations.currentPage++;
+            loadLocations();
+        }
+    });
+    
+    // Trajectories pagination
+    document.getElementById('trajectories-prev-page').addEventListener('click', () => {
+        if (pagination.trajectories.currentPage > 1) {
+            pagination.trajectories.currentPage--;
+            loadTrajectories();
+        }
+    });
+    
+    document.getElementById('trajectories-next-page').addEventListener('click', () => {
+        if (pagination.trajectories.currentPage < pagination.trajectories.totalPages) {
+            pagination.trajectories.currentPage++;
+            loadTrajectories();
+        }
+    });
+}

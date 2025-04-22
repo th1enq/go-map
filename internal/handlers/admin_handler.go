@@ -33,13 +33,29 @@ func (h *AdminHandler) AdminPage(c *gin.Context) {
 }
 
 // USER MANAGEMENT
+// GetUsers returns all users with pagination
 func (h *AdminHandler) GetUsers(c *gin.Context) {
-	users, err := h.userService.GetAllUsers()
+	// Get pagination parameters
+	offset, limit := getPaginationParams(c)
+
+	// Get users with pagination
+	users, err := h.userService.GetUsersPaginated(offset, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get users"})
 		return
 	}
-	c.JSON(http.StatusOK, users)
+
+	// Get total count
+	totalCount, err := h.userService.Count()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user count"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"users": users,
+		"total": totalCount,
+	})
 }
 
 func (h *AdminHandler) GetUser(c *gin.Context) {
@@ -177,12 +193,27 @@ func (h *AdminHandler) GetUserCount(c *gin.Context) {
 
 // LOCATION MANAGEMENT
 func (h *AdminHandler) GetLocations(c *gin.Context) {
-	locations, err := h.locationService.GetAll()
+	// Get pagination parameters
+	offset, limit := getPaginationParams(c)
+
+	// Get locations with pagination
+	locations, err := h.locationService.GetLocationsPaginated(offset, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get locations"})
 		return
 	}
-	c.JSON(http.StatusOK, locations)
+
+	// Get total count
+	totalCount, err := h.locationService.GetLocationCount()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get location count"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"locations": locations,
+		"total":     totalCount,
+	})
 }
 
 func (h *AdminHandler) GetLocation(c *gin.Context) {
@@ -309,9 +340,20 @@ func (h *AdminHandler) GetLocationCount(c *gin.Context) {
 
 // TRAJECTORY MANAGEMENT
 func (h *AdminHandler) GetTrajectories(c *gin.Context) {
-	trajectories, err := h.trajectoryService.GetAllTrajectories()
+	// Get pagination parameters
+	offset, limit := getPaginationParams(c)
+
+	// Get trajectories with pagination
+	trajectories, err := h.trajectoryService.GetTrajectoriesPaginated(offset, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get trajectories"})
+		return
+	}
+
+	// Get total count
+	totalCount, err := h.trajectoryService.GetTrajectoryCount()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get trajectory count"})
 		return
 	}
 
@@ -347,7 +389,10 @@ func (h *AdminHandler) GetTrajectories(c *gin.Context) {
 		enhancedTrajectories = append(enhancedTrajectories, enhancedTrajectory)
 	}
 
-	c.JSON(http.StatusOK, enhancedTrajectories)
+	c.JSON(http.StatusOK, gin.H{
+		"trajectories": enhancedTrajectories,
+		"total":        totalCount,
+	})
 }
 
 func (h *AdminHandler) GetTrajectory(c *gin.Context) {
@@ -516,4 +561,31 @@ func (h *AdminHandler) GetTrajectoryCount(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"count": count})
+}
+
+// Utility function to get pagination parameters from request
+func getPaginationParams(c *gin.Context) (int, int) {
+	// Default pagination values
+	offset := 0
+	limit := 100 // Default to 100 items per page
+
+	// Get offset parameter
+	offsetParam := c.Query("offset")
+	if offsetParam != "" {
+		parsedOffset, err := strconv.Atoi(offsetParam)
+		if err == nil && parsedOffset >= 0 {
+			offset = parsedOffset
+		}
+	}
+
+	// Get limit parameter
+	limitParam := c.Query("limit")
+	if limitParam != "" {
+		parsedLimit, err := strconv.Atoi(limitParam)
+		if err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	return offset, limit
 }

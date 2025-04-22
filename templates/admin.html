@@ -163,6 +163,12 @@
                             <i class="bi bi-plus-circle me-1"></i> Add User
                         </button>
                     </div>
+                    <div id="users-loading" class="text-center py-5" style="display: none;">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading users...</p>
+                    </div>
                     <div class="table-responsive">
                         <table class="table table-striped table-hover">
                             <thead>
@@ -180,6 +186,19 @@
                             </tbody>
                         </table>
                     </div>
+                    <div class="d-flex justify-content-between align-items-center mt-3">
+                        <div>
+                            <span id="users-page-info">Showing 1-100 of 0 users</span>
+                        </div>
+                        <div>
+                            <button id="users-prev-page" class="btn btn-sm btn-outline-secondary me-2" disabled>
+                                <i class="bi bi-chevron-left"></i> Previous
+                            </button>
+                            <button id="users-next-page" class="btn btn-sm btn-outline-secondary" disabled>
+                                Next <i class="bi bi-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Locations Section -->
@@ -190,15 +209,22 @@
                             <i class="bi bi-plus-circle me-1"></i> Add Location
                         </button>
                     </div>
+                    <div id="locations-loading" class="text-center py-5" style="display: none;">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading locations...</p>
+                    </div>
                     <div class="table-responsive">
                         <table class="table table-striped table-hover">
                             <thead>
                                 <tr>
                                     <th>ID</th>
                                     <th>Name</th>
-                                    <th>Address</th>
+                                    <th>Category</th>
                                     <th>Latitude</th>
                                     <th>Longitude</th>
+                                    <th>User ID</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -206,6 +232,19 @@
                                 <!-- Locations will be loaded here -->
                             </tbody>
                         </table>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-3">
+                        <div>
+                            <span id="locations-page-info">Showing 1-100 of 0 locations</span>
+                        </div>
+                        <div>
+                            <button id="locations-prev-page" class="btn btn-sm btn-outline-secondary me-2" disabled>
+                                <i class="bi bi-chevron-left"></i> Previous
+                            </button>
+                            <button id="locations-next-page" class="btn btn-sm btn-outline-secondary" disabled>
+                                Next <i class="bi bi-chevron-right"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -216,6 +255,12 @@
                         <button id="add-trajectory-btn" class="btn btn-primary">
                             <i class="bi bi-plus-circle me-1"></i> Add Trajectory
                         </button>
+                    </div>
+                    <div id="trajectories-loading" class="text-center py-5" style="display: none;">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading trajectories...</p>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-striped table-hover">
@@ -233,6 +278,19 @@
                                 <!-- Trajectories will be loaded here -->
                             </tbody>
                         </table>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-3">
+                        <div>
+                            <span id="trajectories-page-info">Showing 1-100 of 0 trajectories</span>
+                        </div>
+                        <div>
+                            <button id="trajectories-prev-page" class="btn btn-sm btn-outline-secondary me-2" disabled>
+                                <i class="bi bi-chevron-left"></i> Previous
+                            </button>
+                            <button id="trajectories-next-page" class="btn btn-sm btn-outline-secondary" disabled>
+                                Next <i class="bi bi-chevron-right"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </main>
@@ -370,4 +428,4 @@
     
     <script src="/static/js/admin.js"></script>
 </body>
-</html> 
+</html>

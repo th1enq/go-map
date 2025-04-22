@@ -41,16 +41,6 @@ function hideLoading() {
     }
 }
 
-// Function to check if user is logged in
-function checkAuth() {
-    const token = getAuthToken();
-    if (!token) {
-        window.location.href = '/login';
-        return false;
-    }
-    return true;
-}
-
 // Function to display admin tab if user has admin role
 function checkAdminRole() {
     const userJson = localStorage.getItem('user');
@@ -214,13 +204,25 @@ function initMap() {
 
 // Initialize map and attach listeners when document is ready
 document.addEventListener('DOMContentLoaded', function() {
-    // Check authentication
-    if (!checkAuth()) return;
+    // Check admin role for UI visibility if logged in
+    const token = getAuthToken();
+    if (token) {
+        checkAdminRole();
+        
+        // Show logout button only if user is logged in
+        const logoutBtn = document.getElementById('logout-btn');
+        if (logoutBtn) {
+            logoutBtn.style.display = 'block';
+        }
+    } else {
+        // Hide logout button if user is not logged in
+        const logoutBtn = document.getElementById('logout-btn');
+        if (logoutBtn) {
+            logoutBtn.style.display = 'none';
+        }
+    }
     
-    // Check admin role for UI visibility
-    checkAdminRole();
-    
-    // Setup logout functionality
+    // Setup logout functionality regardless
     setupLogout();
     
     // Initialize location search elements
@@ -595,14 +597,6 @@ async function SearchPlaces() {
         return;
     }
 
-    // Get auth token
-    const token = getAuthToken();
-    if (!token) {
-        // Redirect to login page if not authenticated
-        window.location.href = '/login';
-        return;
-    }
-
     // Look for either "search-results" or "results" element
     const resultsDiv = document.getElementById("search-results")
     if (!resultsDiv) {
@@ -646,19 +640,7 @@ async function SearchPlaces() {
         console.log(`[Search] Using API endpoint: ${apiUrl}`);
         
         // Make the API request
-        const response = await fetch(apiUrl, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
-        
-        // Check if response is unauthorized
-        if (response.status === 401) {
-            hideLoading();
-            alert('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-            window.location.href = '/login';
-            return;
-        }
+        const response = await fetch(apiUrl);
         
         const locations = await response.json();
 

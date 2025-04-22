@@ -140,3 +140,38 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		"message": "Successfully logged out",
 	})
 }
+
+// CheckAuthStatus checks if the user is currently authenticated
+func (h *AuthHandler) CheckAuthStatus(c *gin.Context) {
+	// Get user ID from context (set by JWT middleware)
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"authenticated": false,
+			"error":         "Unauthorized",
+		})
+		return
+	}
+
+	// Get user details
+	user, err := h.authService.GetUserByID(userID.(uint))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"authenticated": false,
+			"error":         "Failed to get user details",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"authenticated": true,
+		"user": gin.H{
+			"id":         user.ID,
+			"username":   user.Username,
+			"email":      user.Email,
+			"first_name": user.FirstName,
+			"last_name":  user.LastName,
+			"role":       user.Role,
+		},
+	})
+}

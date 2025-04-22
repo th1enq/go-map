@@ -37,13 +37,22 @@ func SetupNewRouter(db *db.DB, JwtSescret string) *gin.Engine {
 		c.HTML(http.StatusOK, "register.html", nil)
 	})
 
+	authService := services.NewAuthService(db.DB, JwtSescret)
+
+	// Add settings page route
+	router.GET("/settings", middleware.JWTAuth(authService), func(c *gin.Context) {
+		c.HTML(http.StatusOK, "settings.html", nil)
+	})
+
 	findServices := services.NewFindServices()
 
 	userService := services.NewUserServices(db)
 	trajectoryService := services.NewTrajectoryServices(db)
 	stayPointServices := services.NewStayPointServices(db)
 	locationService := services.NewLocationServices(db.DB)
-	authService := services.NewAuthService(db.DB, JwtSescret)
+
+	// Create new service instance for user profile management
+	userProfileService := services.NewUserServices(db)
 
 	// Add hierarchical framework services and handler
 	frameworkService := services.NewHierarchicalFrameworkService(db.DB)
@@ -53,6 +62,11 @@ func SetupNewRouter(db *db.DB, JwtSescret string) *gin.Engine {
 	recommendationService := services.NewRecommendationService(db, similarityService, frameworkService, stayPointServices, locationService)
 	recommendationHandler := handlers.NewRecommendHandler(recommendationService)
 	authHandler := handlers.NewAuthHandler(authService)
+
+	// Create handlers for user settings functionality
+	userHandler := handlers.NewUserHandler(authService, userProfileService)
+	locationHandler := handlers.NewLocationHandler(locationService)
+	trajectoryHandler := handlers.NewTrajectoryHandler(trajectoryService)
 
 	// JWT middleware
 	jwtMiddleware := middleware.JWTAuth(authService)
@@ -64,18 +78,48 @@ func SetupNewRouter(db *db.DB, JwtSescret string) *gin.Engine {
 		{
 			auth.POST("/login", authHandler.Login)
 			auth.POST("/register", authHandler.Register)
-			auth.POST("/logout", authHandler.Logout) // Add logout endpoint
+			auth.POST("/logout", authHandler.Logout)                        // Add logout endpoint
+			auth.GET("/status", jwtMiddleware, authHandler.CheckAuthStatus) // Add auth status endpoint
+		}
+
+		// Public search endpoints (no authentication required)
+		publicLocation := api.Group("/location")
+		{
+			publicLocation.GET("/search/place", findHandler.SearchLocationsByActivity)
+			publicLocation.GET("/search/activity", findHandler.SearchActivitiesByLocation)
+		}
+
+		// User profile endpoints
+		users := api.Group("/users")
+		users.Use(jwtMiddleware)
+		{
+			users.GET("/profile", userHandler.GetProfile)
+			users.PUT("/profile", userHandler.UpdateProfile)
+			users.PUT("/password", userHandler.ChangePassword)
+		}
+
+		// Location management endpoints
+		locations := api.Group("/locations")
+		locations.Use(jwtMiddleware)
+		{
+			locations.GET("", locationHandler.GetUserLocations)
+			locations.POST("", locationHandler.CreateLocation)
+		}
+
+		// Trajectory management endpoints
+		trajectories := api.Group("/trajectories")
+		trajectories.Use(jwtMiddleware)
+		{
+			trajectories.GET("", trajectoryHandler.GetUserTrajectories)
+			trajectories.POST("", trajectoryHandler.CreateTrajectory)
 		}
 
 		// Protected routes that require authentication
-		location := api.Group("/location")
-		location.Use(jwtMiddleware) // Apply JWT middleware to all routes in this group
+		protectedLocation := api.Group("/location")
+		protectedLocation.Use(jwtMiddleware)
 		{
-			location.GET("/search/place", findHandler.SearchLocationsByActivity)
-			location.GET("/search/activity", findHandler.SearchActivitiesByLocation)
-
-			location.GET("/rcm/hot", recommendationHandler.RecommendByHotStayPoint)
-			location.GET("/rcm/same/:id", recommendationHandler.RecommendBySameTracjectory)
+			protectedLocation.GET("/rcm/hot", recommendationHandler.RecommendByHotStayPoint)
+			protectedLocation.GET("/rcm/same/:id", recommendationHandler.RecommendBySameTracjectory)
 		}
 	}
 
@@ -90,29 +134,29 @@ func SetupNewRouter(db *db.DB, JwtSescret string) *gin.Engine {
 	adminGroup.Use(middleware.JWTAuth(authService))
 	{
 		// User management
+		adminGroup.GET("/users/count", adminHandler.GetUserCount)
 		adminGroup.GET("/users", adminHandler.GetUsers)
 		adminGroup.GET("/users/:id", adminHandler.GetUser)
 		adminGroup.POST("/users", adminHandler.CreateUser)
 		adminGroup.PUT("/users/:id", adminHandler.UpdateUser)
 		adminGroup.DELETE("/users/:id", adminHandler.DeleteUser)
-		adminGroup.GET("/users/count", adminHandler.GetUserCount)
 
 		// Location management
+		adminGroup.GET("/locations/count", adminHandler.GetLocationCount)
 		adminGroup.GET("/locations", adminHandler.GetLocations)
 		adminGroup.GET("/locations/:id", adminHandler.GetLocation)
 		adminGroup.POST("/locations", adminHandler.CreateLocation)
 		adminGroup.PUT("/locations/:id", adminHandler.UpdateLocation)
 		adminGroup.DELETE("/locations/:id", adminHandler.DeleteLocation)
-		adminGroup.GET("/locations/count", adminHandler.GetLocationCount)
 
 		// Trajectory management
+		adminGroup.GET("/trajectories/count", adminHandler.GetTrajectoryCount)
 		adminGroup.GET("/trajectories", adminHandler.GetTrajectories)
 		adminGroup.GET("/trajectories/:id", adminHandler.GetTrajectory)
 		adminGroup.GET("/trajectories/:id/points", adminHandler.GetTrajectoryPoints)
 		adminGroup.POST("/trajectories", adminHandler.CreateTrajectory)
 		adminGroup.PUT("/trajectories/:id", adminHandler.UpdateTrajectory)
 		adminGroup.DELETE("/trajectories/:id", adminHandler.DeleteTrajectory)
-		adminGroup.GET("/trajectories/count", adminHandler.GetTrajectoryCount)
 	}
 
 	router.GET("/health", func(c *gin.Context) {

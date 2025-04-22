@@ -19,6 +19,25 @@ func NewUserServices(db *db.DB) *UserServices {
 	}
 }
 
+// UpdateUser updates a user's profile in the database
+func (s *UserServices) UpdateUser(user *models.User) error {
+	return s.DB.Save(user).Error
+}
+
+// GetUserLocations retrieves all locations associated with a user
+func (s *UserServices) GetUserLocations(userID uint) ([]models.Location, error) {
+	var locations []models.Location
+	err := s.DB.Where("user_id = ?", userID).Find(&locations).Error
+	return locations, err
+}
+
+// GetUserTrajectories retrieves all trajectories associated with a user
+func (s *UserServices) GetUserTrajectories(userID uint) ([]models.Trajectory, error) {
+	var trajectories []models.Trajectory
+	err := s.DB.Where("user_id = ?", userID).Find(&trajectories).Error
+	return trajectories, err
+}
+
 func (r *UserServices) GetUserByID(id uint) (*models.User, error) {
 	var user models.User
 	if err := r.DB.First(&user, id).Error; err != nil {
@@ -119,10 +138,6 @@ func (s *UserServices) GetAllUsers() ([]models.User, error) {
 	return users, nil
 }
 
-func (s *UserServices) UpdateUser(user *models.User) error {
-	return s.DB.Save(user).Error
-}
-
 func (s *UserServices) DeleteUser(id uint) error {
 	return s.DB.Delete(&models.User{}, id).Error
 }
@@ -144,4 +159,11 @@ func (s *UserServices) UpdateUserPassword(userID uint, newPassword string) error
 
 func (s *UserServices) SetUserRole(userID uint, role string) error {
 	return s.DB.Model(&models.User{}).Where("id = ?", userID).Update("role", role).Error
+}
+
+// GetUsersPaginated returns users with pagination
+func (s *UserServices) GetUsersPaginated(offset, limit int) ([]models.User, error) {
+	var users []models.User
+	err := s.DB.Offset(offset).Limit(limit).Order("id ASC").Find(&users).Error
+	return users, err
 }
