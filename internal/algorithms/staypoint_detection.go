@@ -2,6 +2,7 @@ package algorithms
 
 import (
 	"encoding/json"
+	"sort"
 	"time"
 
 	"github.com/th1enq/go-map/internal/models"
@@ -11,62 +12,66 @@ func StayPointDetection(trajectory models.Trajectory, distThreshold float64, tim
 	var stayPoints []models.StayPoint
 
 	var points []models.GPSPoint
-	err := json.Unmarshal([]byte(trajectory.Points), &points)
-	if err != nil {
+	if err := json.Unmarshal([]byte(trajectory.Points), &points); err != nil {
 		return stayPoints
 	}
 
-	pointsCount := len(points)
-
-	if pointsCount < 2 {
+	if len(points) < 2 {
 		return stayPoints
 	}
+
+	// Sort by timestamp to ensure chronological order
+	sort.Slice(points, func(i, j int) bool {
+		return points[i].Timestamp.Before(points[j].Timestamp)
+	})
 
 	i := 0
-	for i < pointsCount {
+	for i < len(points)-1 { // Ensure i never reaches the last point
 		j := i + 1
-		for j < pointsCount {
-			dist := Distance(
-				points[i].Latitude,
-				points[i].Longitude,
-				points[j].Latitude,
-				points[j].Longitude,
-			) * 1000
+		foundStay := false
 
-			if dist > distThreshold {
+		// Set a maximum for j to prevent excessive loop iterations
+		jMax := len(points)
+		if i+1000 < len(points) {
+			// Limit processing window to 1000 points to improve performance
+			jMax = i + 1000
+		}
+
+		for j < jMax {
+			dist := Distance(points[i].Latitude, points[i].Longitude, points[j].Latitude, points[j].Longitude) * 1000
+			if dist <= distThreshold {
 				deltaT := points[j].Timestamp.Sub(points[i].Timestamp)
-
 				if deltaT > timeThreshold {
 					var sumLat, sumLng float64
-					for k := i; k < j; k++ {
+					for k := i; k <= j; k++ {
 						sumLat += points[k].Latitude
 						sumLng += points[k].Longitude
 					}
-
-					avgLat := sumLat / float64(j-i)
-					avgLng := sumLng / float64(j-i)
-
-					stayPoint := models.StayPoint{
+					count := float64(j - i + 1)
+					stayPoints = append(stayPoints, models.StayPoint{
 						UserID:        trajectory.UserID,
 						TrajectoryID:  trajectory.ID,
-						Latitude:      avgLat,
-						Longitude:     avgLng,
+						Latitude:      sumLat / count,
+						Longitude:     sumLng / count,
 						ArrivalTime:   points[i].Timestamp,
 						DepartureTime: points[j].Timestamp,
-					}
+					})
 
-					stayPoints = append(stayPoints, stayPoint)
+					// Ensure i advances to avoid infinite loop
+					i = j + 1 // Move i past j instead of setting i = j
+					foundStay = true
+					break
 				}
-
-				i = j
+			} else {
+				// If distance exceeds threshold, we can't have a stay point
+				// No need to check more points from this i position
 				break
 			}
-
 			j++
 		}
 
-		if j >= pointsCount {
-			break
+		if !foundStay {
+			i++ // Increment i to check the next point
 		}
 	}
 
