@@ -95,7 +95,7 @@ export default function Search() {
       return;
     }
     
-    // Chỉ cập nhật marker và vị trí trên bản đồ, không gọi API searchNearby
+    // Cập nhật marker và vị trí trên bản đồ
     if (mapRef.current) {
       console.log('🔍 Map ref exists, trying to set location marker');
       // Check if the method exists before calling it
@@ -113,6 +113,9 @@ export default function Search() {
     } else {
       console.log('🔴 Map ref is null');
     }
+    
+    // Gọi API tìm kiếm địa điểm gần đó dựa trên vị trí và danh mục đã chọn
+    searchNearbyPlaces(selectedLocation, selectedCategory);
   };
 
   // Handle using current location
@@ -172,11 +175,6 @@ export default function Search() {
   // Handle category selection
   const handleCategorySelect = (category) => {
     setSelectedCategory(category);
-    
-    // Nếu có vị trí đã chọn, thực hiện tìm kiếm
-    if (selectedLocation) {
-      searchNearbyPlaces(selectedLocation, category);
-    }
   };
 
   // Function to search nearby places - implementation to resolve the TypeError
@@ -265,8 +263,8 @@ export default function Search() {
   const getDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Radius of the earth in km
     const dLat = deg2rad(lat2 - lat1);
-    const dLon = deg2rad(lon2 - lon1);
-    const a = 
+    const dLon = deg2rad(lat2 - lon1);
+    const a =
       Math.sin(dLat/2) * Math.sin(dLat/2) +
       Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
       Math.sin(dLon/2) * Math.sin(dLon/2); 
@@ -438,6 +436,54 @@ export default function Search() {
     setSearchQuery(location.name);
   }, []);
 
+  // Add an effect to properly handle search results and display markers
+  useEffect(() => {
+    // Only proceed if we have search results and a valid map reference
+    if (searchResults.length > 0 && mapRef.current && selectedLocation) {
+      console.log('🌍 Handling search results in effect hook');
+      
+      // If the map has the searchNearbyPlaces method, let it handle displaying all markers at once
+      if (typeof mapRef.current.searchNearbyPlaces === 'function') {
+        mapRef.current.searchNearbyPlaces(selectedLocation, selectedCategory);
+      } 
+      // If we need to show individual markers, use showLocationMarker if available
+      else if (typeof mapRef.current.showLocationMarker === 'function') {
+        searchResults.forEach(location => {
+          mapRef.current.showLocationMarker(location);
+        });
+      } 
+      // Last resort: dispatch custom events for each location
+      else {
+        console.log('🔴 Using fallback method to show location markers');
+        searchResults.forEach(location => {
+          const event = new CustomEvent('showLocation', {
+            detail: location,
+            bubbles: true
+          });
+          document.dispatchEvent(event);
+        });
+      }
+    }
+  }, [searchResults, selectedLocation, selectedCategory]);
+
+  // Add event listener for the showLocation custom event
+  useEffect(() => {
+    const handleShowLocation = (e) => {
+      const location = e.detail;
+      
+      // This is a fallback for when the map ref methods aren't accessible
+      if (mapRef.current && typeof mapRef.current.showLocationMarker === 'function') {
+        console.log('🌍 showLocation event received:', e.detail);
+        mapRef.current.showLocationMarker(location);
+      }
+    };
+
+    document.addEventListener('showLocation', handleShowLocation);
+    return () => {
+      document.removeEventListener('showLocation', handleShowLocation);
+    };
+  }, []);
+
   return (
     <MainLayout title="Search">
       <div className={styles.pageContainer}>
@@ -578,39 +624,44 @@ export default function Search() {
                   </div>
                 ) : (
                   <div className={styles.locationItemsContainer}>
-                    {searchResults.map((location, index) => (
-                      <div
-                        key={`${location.id || index}`}
-                        className={styles.locationItem}
-                        onClick={() => handleResultItemClick(location)}
-                      >
-                        <div className={styles.locationIndex}>{index + 1}</div>
-                        <div className={styles.locationDetails}>
-                          <h5>{location.name}</h5>
-                          <p className={styles.coordinates}>
-                            <i className="fas fa-map-pin"></i> {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
-                          </p>
-                          {location.category && (
-                            <p className={styles.locationMeta}>
-                              <i className="fas fa-tag"></i> <strong>Type:</strong> {location.category}
+                    {searchResults.map((location, index) => {
+                      // We'll handle all markers at once in an effect rather than on each render
+                      return (
+                        <div
+                          key={`${location.id || index}`}
+                          className={styles.locationItem}
+                          onClick={() => {
+                            handleResultItemClick(location);
+                          }}
+                        >
+                          <div className={styles.locationIndex}>{index + 1}</div>
+                          <div className={styles.locationDetails}>
+                            <h5>{location.name}</h5>
+                            <p className={styles.coordinates}>
+                              <i className="fas fa-map-pin"></i> {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
                             </p>
-                          )}
-                          {location.tag && (
-                            <p className={styles.locationMeta}>
-                              <i className="fas fa-bookmark"></i> <strong>Category:</strong> {location.tag}
-                            </p>
-                          )}
-                          {location.activities && (
-                            <p className={styles.locationMeta}>
-                              <i className="fas fa-list-ul"></i> <strong>Activities:</strong> {location.activities.join(', ')}
-                            </p>
-                          )}
-                          <div className={styles.distanceBadge}>
-                            <i className="fas fa-route"></i> {(location.distance * 1000).toFixed(0)}m
+                            {location.category && (
+                              <p className={styles.locationMeta}>
+                                <i className="fas fa-tag"></i> <strong>Type:</strong> {location.category}
+                              </p>
+                            )}
+                            {location.tag && (
+                              <p className={styles.locationMeta}>
+                                <i className="fas fa-bookmark"></i> <strong>Category:</strong> {location.tag}
+                              </p>
+                            )}
+                            {location.activities && (
+                              <p className={styles.locationMeta}>
+                                <i className="fas fa-list-ul"></i> <strong>Activities:</strong> {location.activities.join(', ')}
+                              </p>
+                            )}
+                            <div className={styles.distanceBadge}>
+                              <i className="fas fa-route"></i> {(location.distance * 1000).toFixed(0)}m
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

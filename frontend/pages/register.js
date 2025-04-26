@@ -61,7 +61,12 @@ export default function Register() {
       }
 
       // Registration successful
-      router.push('/login?registered=true');
+      localStorage.setItem('token', data.token);
+      
+      // Set token in cookie for server-side requests
+      document.cookie = `auth_token=${data.token}; path=/; max-age=86400; SameSite=Strict`;
+      
+      router.push('/');
     } catch (err) {
       setError(err.message || 'An error occurred during registration');
     } finally {

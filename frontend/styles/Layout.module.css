@@ -40,6 +40,23 @@
   color: #2563eb;
 }
 
+/* Style for the active navigation link */
+.active {
+  color: #2563eb;
+  font-weight: 700;
+  position: relative;
+}
+
+.active::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background-color: #2563eb;
+}
+
 .loginBtn {
   background-color: #2563eb;
   color: white !important;

@@ -44,6 +44,16 @@ export default function Login() {
 
       // Login successful
       localStorage.setItem('token', data.token);
+      
+      // Save user data to localStorage
+      if (data.user) {
+        localStorage.setItem('user', JSON.stringify(data.user));
+        console.log('User data saved:', data.user);
+      }
+      
+      // Set token in cookie for server-side requests
+      document.cookie = `auth_token=${data.token}; path=/; max-age=86400; SameSite=Strict`;
+      
       router.push('/');
     } catch (err) {
       setError(err.message || 'An error occurred during login');
