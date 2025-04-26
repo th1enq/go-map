@@ -19,6 +19,7 @@ export default function Recommend() {
   const [loading, setLoading] = useState(false);
   const [resultCount, setResultCount] = useState();
   const [recommendationType, setRecommendationType] = useState('popular');
+  const [isMapReady, setIsMapReady] = useState(false);
   const mapRef = useRef(null);
   const searchTimeoutRef = useRef(null);
   const suggestionsRef = useRef(null);
@@ -80,6 +81,16 @@ export default function Recommend() {
         });
         document.dispatchEvent(customEvent);
       }
+      
+      // Clear previous markers
+      clearMarkers();
+      
+      setRecommendationType('popular');
+      fetchPopularRecommendations();
+    } else {
+      // If mapRef.current is null, set loading to false
+      setLoading(false);
+      console.log('🔴 Map reference not available');
     }
   };
 
@@ -101,7 +112,10 @@ export default function Recommend() {
 
   // Handle using current location
   const handleUseCurrentLocation = () => {
-    if (!mapRef.current) return;
+    if (!isMapReady) {
+      console.log('🔴 Map is not ready yet');
+      return;
+    }
     
     setLoading(true);
     if (navigator.geolocation) {
@@ -123,9 +137,17 @@ export default function Recommend() {
               setSelectedLocation(location);
               setSearchQuery(location.name);
               
-              // Only call setLocationMarker since that's the essential method
-              if (mapRef.current && typeof mapRef.current.setLocationMarker === 'function') {
-                mapRef.current.setLocationMarker(location);
+              // Try to set marker using map ref
+              if (mapRef.current && mapRef.current.setCurrentLocationMarker) {
+                console.log('📍 Setting current location marker:', location);
+                mapRef.current.setCurrentLocationMarker(location);
+              } else {
+                console.log('🔴 setCurrentLocationMarker method not available, using event');
+                // Fallback to custom event
+                const event = new CustomEvent('setCurrentLocation', {
+                  detail: location
+                });
+                document.dispatchEvent(event);
               }
               
               setLoading(false);
@@ -141,9 +163,17 @@ export default function Recommend() {
               setSelectedLocation(location);
               setSearchQuery(location.name);
               
-              // Only call setLocationMarker since that's the essential method
-              if (mapRef.current && typeof mapRef.current.setLocationMarker === 'function') {
-                mapRef.current.setLocationMarker(location);
+              // Try to set marker using map ref
+              if (mapRef.current && mapRef.current.setCurrentLocationMarker) {
+                console.log('📍 Setting current location marker:', location);
+                mapRef.current.setCurrentLocationMarker(location);
+              } else {
+                console.log('🔴 setCurrentLocationMarker method not available, using event');
+                // Fallback to custom event
+                const event = new CustomEvent('setCurrentLocation', {
+                  detail: location
+                });
+                document.dispatchEvent(event);
               }
               
               setLoading(false);
@@ -256,7 +286,7 @@ export default function Recommend() {
       if (locationsWithDistance.length === 0) {
         setResultCount('No popular locations found');
       } else {
-        setResultCount(`${locationsWithDistance.length} popular locations found`);
+        setResultCount(`${locationsWithDistance.length} results`);
         
         // Display markers on map
         if (mapRef.current) {
@@ -264,9 +294,10 @@ export default function Recommend() {
         }
       }
       
+      // Set loading to false after successful completion
       setLoading(false);
     } catch (error) {
-      console.error('Error fetching recommendations:', error);
+      console.error('Error fetching popular recommendations:', error);
       setLoading(false);
       setResultCount('Error fetching recommendations');
     }
@@ -329,7 +360,7 @@ export default function Recommend() {
       }).sort((a, b) => a.distance - b.distance);
       
       setSearchResults(locationsWithDistance);
-      setResultCount(`${locationsWithDistance.length} personalized recommendations`);
+      setResultCount(`${locationsWithDistance.length} results`);
       
       // Display markers on map
       if (mapRef.current) {
@@ -348,15 +379,36 @@ export default function Recommend() {
   const displayLocationsOnMap = (locations) => {
     if (!mapRef.current || !locations || locations.length === 0) return;
     
+    console.log('🔍 Displaying locations on map:', locations.length);
+    
     // Create bounds that include both the selected location and all result locations
     const points = [
       [selectedLocation.lat, selectedLocation.lng],
       ...locations.map(loc => [loc.latitude, loc.longitude])
     ];
     
-    // Add markers to map
+    // Approach 1: Try to use mapRef directly with searchNearbyPlaces method
+    if (mapRef.current && typeof mapRef.current.searchNearbyPlaces === 'function') {
+      console.log('🔍 Using mapRef.current.searchNearbyPlaces');
+      mapRef.current.searchNearbyPlaces(selectedLocation, 'all');
+      return;
+    }
+    
+    // Approach 2: As a fallback, dispatch a custom event
+    console.log('🔍 Using fallback method to show location markers');
+    const searchEvent = new CustomEvent('searchNearbyPlaces', { 
+      detail: { location: selectedLocation, category: 'all', results: locations },
+      bubbles: true
+    });
+    document.dispatchEvent(searchEvent);
+    
+    // Approach 3: Also try to manually show each location marker 
+    // if individual marker method exists or via custom event
     locations.forEach((location, index) => {
-      if (mapRef.current.addPointOfInterest) {
+      if (mapRef.current && typeof mapRef.current.showLocationMarker === 'function') {
+        mapRef.current.showLocationMarker(location);
+      } else if (mapRef.current && typeof mapRef.current.addPointOfInterest === 'function') {
+        // Use the existing addPointOfInterest method as a fallback
         const marker = mapRef.current.addPointOfInterest(
           location.latitude, 
           location.longitude, 
@@ -373,30 +425,70 @@ export default function Recommend() {
           index + 1
         );
         searchMarkers.current.push(marker);
+      } else {
+        // Last resort: use custom event
+        const event = new CustomEvent('showLocation', {
+          detail: location,
+          bubbles: true
+        });
+        document.dispatchEvent(event);
       }
     });
     
     // Fit map to include all points
-    if (mapRef.current.fitBounds) {
+    if (mapRef.current && typeof mapRef.current.fitBounds === 'function') {
       mapRef.current.fitBounds(points);
     }
   };
 
   // Handle result item click
   const handleResultItemClick = (location) => {
-    if (!mapRef.current) return;
+    if (!mapRef.current) {
+      console.log('🔴 Map reference not available');
+      return;
+    }
     
-    // Check if map has required methods
-    if (mapRef.current.drawRoute) {
-      mapRef.current.drawRoute(
-        selectedLocation.lat,
-        selectedLocation.lng,
-        location.latitude,
-        location.longitude
-      );
-    } else {
-      // Show route using OSRM API if map method not available
-      showRouteToLocation(location);
+    try {
+      console.log('🌍 Result item clicked:', location);
+      console.log('🌍 Selected location:', selectedLocation);
+      
+      // Clear previous route
+      if (currentRoute.current) {
+        if (mapRef.current.removePolyline) {
+          mapRef.current.removePolyline(currentRoute.current);
+        }
+        currentRoute.current = null;
+      }
+      
+      // First try to use the focusLocationAndDrawRoute method if available
+      if (typeof mapRef.current.focusLocationAndDrawRoute === 'function') {
+        console.log('🌍 Calling focusLocationAndDrawRoute with:', selectedLocation, location);
+        mapRef.current.focusLocationAndDrawRoute(selectedLocation, location);
+      } 
+      // Then try to use the drawRoute method if available
+      else if (typeof mapRef.current.drawRoute === 'function') {
+        console.log('🌍 Using drawRoute method');
+        mapRef.current.drawRoute(
+          selectedLocation.lat,
+          selectedLocation.lng,
+          location.latitude,
+          location.longitude
+        );
+      } 
+      // If neither method is available, dispatch a custom event
+      else {
+        console.log('🌍 No direct route drawing method available, using custom event');
+        const event = new CustomEvent('focusLocationAndDrawRoute', {
+          detail: { 
+            startLocation: selectedLocation, 
+            endLocation: location 
+          },
+          bubbles: true
+        });
+        document.dispatchEvent(event);
+      }
+    } catch (error) {
+      console.error('Error focusing location and drawing route:', error);
     }
   };
 
@@ -558,6 +650,64 @@ export default function Recommend() {
     };
   }, []);
 
+  // Add event listener for setting current location
+  useEffect(() => {
+    const handleSetCurrentLocation = (e) => {
+      console.log('setCurrentLocation event received in Recommend component:', e.detail);
+      const location = e.detail;
+      
+      if (location) {
+        setSelectedLocation(location);
+        setSearchQuery(location.name);
+      }
+    };
+    
+    document.addEventListener('setCurrentLocation', handleSetCurrentLocation);
+    
+    return () => {
+      document.removeEventListener('setCurrentLocation', handleSetCurrentLocation);
+    };
+  }, []);
+
+  // Add event listener for map initialization
+  useEffect(() => {
+    const handleMapInitialized = (e) => {
+      console.log('mapInitialized event received in Recommend component');
+      setIsMapReady(true);
+    };
+    
+    document.addEventListener('mapInitialized', handleMapInitialized);
+    
+    return () => {
+      document.removeEventListener('mapInitialized', handleMapInitialized);
+    };
+  }, []);
+
+  // Add event listener for showing location
+  useEffect(() => {
+    const handleShowLocation = (e) => {
+      console.log('showLocation event received in Recommend component:', e.detail);
+      const location = e.detail;
+      
+      if (location && mapRef.current) {
+        // If we have a marker for this location, focus on it
+        const marker = searchMarkers.current.find(m => 
+          m.lat === location.latitude && m.lng === location.longitude
+        );
+        
+        if (marker && typeof mapRef.current.focusOnMarker === 'function') {
+          mapRef.current.focusOnMarker(marker);
+        }
+      }
+    };
+    
+    document.addEventListener('showLocation', handleShowLocation);
+    
+    return () => {
+      document.removeEventListener('showLocation', handleShowLocation);
+    };
+  }, []);
+
   // Helper function to calculate distance between two coordinates in kilometers
   const getDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Radius of the earth in km
@@ -622,32 +772,29 @@ export default function Recommend() {
                 )}
               </div>
             </div>
-          </div>
-          
-          <div className={styles.recommendButtons}>
-            <button 
-              className={`${styles.recommendButton} ${recommendationType === 'popular' ? styles.active : ''}`} 
-              onClick={handleRecommendPopular}
-            >
-              <i className="fas fa-fire"></i>
-              <span>Popular Places</span>
-            </button>
-            
-            <button 
-              className={styles.recommendButton} 
-              onClick={handleUseCurrentLocation}
-            >
-              <i className="fas fa-location-arrow"></i>
-              <span>Use Current Location</span>
-            </button>
-            
-            <button 
-              className={`${styles.recommendButton} ${recommendationType === 'personal' ? styles.active : ''}`} 
-              onClick={handleRecommendForYou}
-            >
-              <i className="fas fa-user"></i>
-              <span>Recommendations For You</span>
-            </button>
+            <div className={styles.searchButtonsContainer}>
+              <button 
+                className={styles.primaryButton} 
+                onClick={handleRecommendPopular}
+              >
+                <i className="fas fa-fire"></i>
+                <span>Popular Places</span>
+              </button>
+              <button 
+                className={styles.secondaryButton} 
+                onClick={handleUseCurrentLocation}
+              >
+                <i className="fas fa-location-arrow"></i>
+                <span>Use Current Location</span>
+              </button>
+              <button 
+                className={styles.primaryButton} 
+                onClick={handleRecommendForYou}
+              >
+                <i className="fas fa-user"></i>
+                <span>For You</span>
+              </button>
+            </div>
           </div>
           
           <div className={styles.mapResultsContainer}>

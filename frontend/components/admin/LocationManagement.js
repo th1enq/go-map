@@ -299,9 +299,6 @@ export default function LocationManagement() {
       {/* Header */}
       <div className={styles.pageHeader}>
         <h3 className={styles.pageTitle}>Locations Management</h3>
-        <button className={styles.primaryButton} onClick={showAddLocationModal}>
-          <i className="fas fa-plus-circle"></i> Add Location
-        </button>
       </div>
 
       {/* Loading indicator */}

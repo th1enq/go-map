@@ -348,6 +348,9 @@ export default function Search() {
     }
     
     try {
+      console.log('🌍 Result item clicked:', location);
+      console.log('🌍 Selected location:', selectedLocation);
+      
       if (typeof mapRef.current.focusLocationAndDrawRoute === 'function') {
         console.log('🌍 Calling focusLocationAndDrawRoute with:', selectedLocation, location);
         mapRef.current.focusLocationAndDrawRoute(selectedLocation, location);

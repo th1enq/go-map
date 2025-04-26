@@ -478,9 +478,6 @@ export default function TrajectoryManagement() {
       {/* Header */}
       <div className={styles.pageHeader}>
         <h3 className={styles.pageTitle}>Trajectories Management</h3>
-        <button className={styles.primaryButton} onClick={showAddTrajectoryModal}>
-          <i className="fas fa-plus-circle"></i> Add Trajectory
-        </button>
       </div>
 
       {/* Loading indicator */}

@@ -452,32 +452,22 @@ const Map = forwardRef(({ onSearchResultsUpdate, onMapInitialized }, ref) => {
         return;
       }
       
-      // Clear all existing markers
-      if (selectedLocationMarkerRef.current) {
-        try {
-          console.log('🌍 Removing selected location marker');
-          map.removeLayer(selectedLocationMarkerRef.current);
-        } catch (err) {
-          console.error('Error removing marker:', err);
-        }
-        selectedLocationMarkerRef.current = null;
-      }
-      
-      if (currentLocationMarkerRef.current) {
-        console.log('🌍 Removing current location marker');
-        map.removeLayer(currentLocationMarkerRef.current);
-        currentLocationMarkerRef.current = null;
-      }
-      
+      // Only clear previous search result markers, keep selected/current location markers
       if (searchMarkersRef.current.length > 0) {
-        console.log('🌍 Removing search result markers');
+        console.log('🌍 Removing previous search result markers');
         searchMarkersRef.current.forEach(marker => {
           map.removeLayer(marker);
         });
         searchMarkersRef.current = [];
       }
       
-      // Create new markers for all search results
+      // Clear previous route
+      if (currentRoute) {
+        map.removeLayer(currentRoute);
+        setCurrentRoute(null);
+      }
+      
+      // Create markers for search results
       const newMarkers = [];
       
       results.forEach((loc, index) => {
@@ -524,6 +514,52 @@ const Map = forwardRef(({ onSearchResultsUpdate, onMapInitialized }, ref) => {
     };
   }, [map, leaflet, onSearchResultsUpdate]);
 
+  // Add event listener for the focusLocationAndDrawRoute custom event
+  useEffect(() => {
+    if (!map || !leaflet) return;
+
+    const handleFocusLocationAndDrawRoute = (e) => {
+      console.log('🌍 focusLocationAndDrawRoute event received:', e.detail);
+      const { startLocation, endLocation } = e.detail;
+      
+      if (!map || !startLocation || !endLocation) {
+        console.log('🔴 Map, startLocation, or endLocation not available');
+        return;
+      }
+      
+      console.log('🌍 focusLocationAndDrawRoute called with:', startLocation, endLocation);
+      
+      // Clear previous route if any
+      if (currentRoute) {
+        console.log('🌍 Removing previous route from event handler');
+        map.removeLayer(currentRoute);
+        setCurrentRoute(null);
+      }
+      
+      // Focus on the selected location
+      map.setView([endLocation.latitude, endLocation.longitude], 18);
+      
+      // Find and open the popup for this location
+      searchMarkersRef.current.forEach((marker, index) => {
+        const markerLatLng = marker.getLatLng();
+        if (
+          markerLatLng.lat.toFixed(5) === endLocation.latitude.toFixed(5) &&
+          markerLatLng.lng.toFixed(5) === endLocation.longitude.toFixed(5)
+        ) {
+          marker.openPopup();
+        }
+      });
+      
+      // Draw route between points
+      drawRouteBetweenPoints(startLocation, endLocation);
+    };
+
+    document.addEventListener('focusLocationAndDrawRoute', handleFocusLocationAndDrawRoute);
+    return () => {
+      document.removeEventListener('focusLocationAndDrawRoute', handleFocusLocationAndDrawRoute);
+    };
+  }, [map, leaflet, currentRoute]);
+
   // Create a POI icon for search results
   const createPoiIcon = (index) => {
     if (!leaflet) return null;
@@ -556,35 +592,159 @@ const Map = forwardRef(({ onSearchResultsUpdate, onMapInitialized }, ref) => {
 
   // Draw a route between two points
   const drawRouteBetweenPoints = (startLocation, endLocation) => {
-    if (!map || !leaflet) return;
+    if (!map || !leaflet) {
+      console.log('🔴 Map or leaflet not available for drawing route');
+      return;
+    }
+    
+    console.log('🌍 Starting to draw route, current route state:', currentRoute);
     
     // Clear previous route if any
     if (currentRoute) {
+      console.log('🌍 Removing previous route');
       map.removeLayer(currentRoute);
       setCurrentRoute(null);
     }
     
     // Create start and end coordinates
-    const startCoord = [startLocation.lat || startLocation.latitude, startLocation.lng || startLocation.longitude];
-    const endCoord = [endLocation.latitude, endLocation.longitude];
+    const startCoord = [
+      startLocation.lat || startLocation.latitude, 
+      startLocation.lng || startLocation.longitude
+    ];
+    const endCoord = [
+      endLocation.latitude || endLocation.lat, 
+      endLocation.longitude || endLocation.lng
+    ];
     
     console.log('🌍 Drawing route between', startCoord, 'and', endCoord);
     
-    // Draw a simple straight line for now
-    // In a real app, you would use a routing service like OSRM, Mapbox, or Google Directions
-    const routeLine = leaflet.polyline([startCoord, endCoord], {
-      color: '#2563eb',
-      weight: 4,
-      opacity: 0.7,
-      dashArray: '10, 10',
-      lineJoin: 'round'
-    }).addTo(map);
+    // Show loading popup
+    const loadingPopup = leaflet.popup()
+      .setLatLng(startCoord)
+      .setContent(`
+        <div style="text-align: center; padding: 5px;">
+          <div class="spinner-border spinner-border-sm text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <span style="margin-left: 5px;">Đang tính toán lộ trình...</span>
+        </div>
+      `)
+      .openOn(map);
     
-    setCurrentRoute(routeLine);
-    
-    // Fit the map to show the entire route with padding
-    const bounds = leaflet.latLngBounds([startCoord, endCoord]);
-    map.fitBounds(bounds, { padding: [50, 50] });
+    // Get route from OSRM API
+    fetch(`https://router.project-osrm.org/route/v1/driving/${startCoord[1]},${startCoord[0]};${endCoord[1]},${endCoord[0]}?overview=full&geometries=geojson`)
+      .then(response => response.json())
+      .then(data => {
+        // Close loading popup
+        map.closePopup(loadingPopup);
+        
+        if (data.routes && data.routes.length > 0) {
+          const route = data.routes[0];
+          
+          // Convert coordinates from GeoJSON (lng, lat) to Leaflet (lat, lng)
+          const routeCoordinates = route.geometry.coordinates.map(coord => [coord[1], coord[0]]);
+          
+          // Draw route with new style
+          const routeLine = leaflet.polyline(routeCoordinates, {
+            color: '#2563eb',
+            weight: 5,
+            opacity: 0.8,
+            dashArray: '10, 10',
+            lineCap: 'round',
+            lineJoin: 'round'
+          }).addTo(map);
+          
+          console.log('🌍 New route drawn, setting currentRoute state');
+          setCurrentRoute(routeLine);
+          
+          // Calculate route info
+          const distance = (route.distance / 1000).toFixed(2); // Convert to km with 2 decimal places
+          const duration = Math.round(route.duration / 60); // Convert to minutes
+          
+          // Show route info popup
+          leaflet.popup()
+            .setLatLng(startCoord)
+            .setContent(`
+              <div style="font-family: Arial, sans-serif; max-width: 200px;">
+                <strong style="color: #2563eb;">Thông tin lộ trình:</strong><br>
+                <strong>Khoảng cách:</strong> ${distance} km<br>
+                <strong>Thời gian lái xe:</strong> ${duration} phút<br>
+                <small>(Đây là tuyến đường lái xe ngắn nhất)</small>
+              </div>
+            `)
+            .openOn(map);
+          
+          // Fit the map to show the entire route with padding
+          const bounds = leaflet.latLngBounds([
+            startCoord,
+            endCoord,
+            ...routeCoordinates
+          ]);
+          map.fitBounds(bounds, { padding: [50, 50] });
+        } else {
+          console.log('🌍 No route found, drawing straight line');
+          // If no route found, draw simple straight line
+          const routeLine = leaflet.polyline([startCoord, endCoord], {
+            color: '#2563eb',
+            weight: 4,
+            opacity: 0.7,
+            dashArray: '10, 10',
+            lineJoin: 'round'
+          }).addTo(map);
+          
+          setCurrentRoute(routeLine);
+          
+          // Calculate air distance
+          const airDistance = (calculateDistance(
+            startCoord[0], 
+            startCoord[1], 
+            endCoord[0], 
+            endCoord[1]
+          ) * 1000).toFixed(0);
+          
+          // Show no route found message
+          leaflet.popup()
+            .setLatLng(startCoord)
+            .setContent(`
+              <div style="font-family: Arial, sans-serif; max-width: 200px;">
+                <strong style="color: #2563eb;">Không tìm thấy tuyến đường!</strong><br>
+                <strong>Khoảng cách đường chim bay:</strong> ${airDistance} m<br>
+                <small>(Đây là khoảng cách trực tiếp giữa hai điểm)</small>
+              </div>
+            `)
+            .openOn(map);
+          
+          // Fit the map to show the entire route with padding
+          const bounds = leaflet.latLngBounds([startCoord, endCoord]);
+          map.fitBounds(bounds, { padding: [50, 50] });
+        }
+      })
+      .catch(error => {
+        console.error('Error calculating route:', error);
+        map.closePopup(loadingPopup);
+        
+        // Draw simple line if error
+        const routeLine = leaflet.polyline([startCoord, endCoord], {
+          color: '#2563eb',
+          weight: 4,
+          opacity: 0.7,
+          dashArray: '10, 10',
+          lineJoin: 'round'
+        }).addTo(map);
+        
+        setCurrentRoute(routeLine);
+        
+        // Show error message
+        leaflet.popup()
+          .setLatLng(startCoord)
+          .setContent(`
+            <div style="font-family: Arial, sans-serif; max-width: 200px;">
+              <strong style="color: #2563eb;">Lỗi khi tính toán lộ trình!</strong><br>
+              <small>Không thể kết nối đến dịch vụ tính toán lộ trình.</small>
+            </div>
+          `)
+          .openOn(map);
+      });
   };
 
   // Expose methods to the parent component via ref
@@ -876,7 +1036,18 @@ const Map = forwardRef(({ onSearchResultsUpdate, onMapInitialized }, ref) => {
       },
       
       focusLocationAndDrawRoute: (startLocation, endLocation) => {
-        if (!map || !startLocation || !endLocation) return;
+        if (!map || !startLocation || !endLocation) {
+          console.log('🔴 Map, startLocation, or endLocation not available');
+          return;
+        }
+        
+        console.log('🌍 focusLocationAndDrawRoute called with:', startLocation, endLocation);
+        
+        // Clear previous route if any
+        if (currentRoute) {
+          map.removeLayer(currentRoute);
+          setCurrentRoute(null);
+        }
         
         // Focus on the selected location
         map.setView([endLocation.latitude, endLocation.longitude], 18);

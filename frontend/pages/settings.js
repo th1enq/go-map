@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
@@ -37,6 +37,20 @@ export default function Settings() {
     description: ''
   });
   
+  // State for OSM search
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSearchSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestionsRef = useRef(null);
+  const searchTimeoutRef = useRef(null);
+  const searchInputRef = useRef(null);
+  const [isMapReady, setIsMapReady] = useState(false);
+  const [selectedLocation, setSelectedLocation] = useState(null);
+
+  
+  // State for input method (search or coordinates)
+  const [inputMethod, setInputMethod] = useState('search');
+
   // State for trajectory
   const [trajectory, setTrajectory] = useState({
     name: '',
@@ -46,9 +60,29 @@ export default function Settings() {
   // State for alerts
   const [alert, setAlert] = useState({ message: '', type: '' });
   
-  // Map reference
-  const [mapRef, setMapRef] = useState(null);
+  // Add map reference using useRef for direct access to map methods
+  const mapRef = useRef(null);
   
+  useEffect(() => {
+    const handleMapInitialized = (e) => {
+      console.log('🌍 Map initialized event received');
+      if (mapRef.current) {
+        console.log('🌍 Map ref updated:', mapRef.current);
+      }
+    };
+
+    document.addEventListener('mapInitialized', handleMapInitialized);
+    return () => {
+      document.removeEventListener('mapInitialized', handleMapInitialized);
+    };
+  }, []);
+
+   // Handle map initialization
+   const handleMapInitialized = useCallback(() => {
+    console.log('📍 Map initialized');
+    setIsMapReady(true);
+  }, []);
+
   // Check authentication on page load
   useEffect(() => {
     // Fetch user data when component mounts
@@ -99,6 +133,67 @@ export default function Settings() {
     
     fetchUserData();
   }, [router]);
+  
+  // Add event listener for markerDragEnd event
+  useEffect(() => {
+    const handleMarkerDragEnd = (e) => {
+      console.log('Marker drag end event received:', e.detail);
+      const { lat, lng } = e.detail;
+      
+      // Update location state with the new coordinates
+      setLocation(prev => ({
+        ...prev,
+        latitude: lat,
+        longitude: lng
+      }));
+      
+      // Fetch location name from coordinates
+      fetchLocationNameFromCoordinates(lat, lng);
+    };
+    
+    document.addEventListener('markerDragEnd', handleMarkerDragEnd);
+    
+    return () => {
+      document.removeEventListener('markerDragEnd', handleMarkerDragEnd);
+    };
+  }, []);
+  
+  // Add event listener for locationSelected event
+  useEffect(() => {
+    const handleLocationSelected = (e) => {
+      console.log('Location selected event received:', e.detail);
+      const { lat, lng, name } = e.detail;
+      
+      // Update location state with the selected location
+      setLocation(prev => ({
+        ...prev,
+        latitude: lat,
+        longitude: lng,
+        name: name || prev.name // Keep existing name if new one is not provided
+      }));
+    };
+    
+    document.addEventListener('locationSelected', handleLocationSelected);
+    
+    return () => {
+      document.removeEventListener('locationSelected', handleLocationSelected);
+    };
+  }, []);
+  
+  // Add event listener for clicks outside the search input
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchInputRef.current && !searchInputRef.current.contains(event.target)) {
+        setShowSuggestions(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
   
   // Show alert function
   const showAlert = (message, type) => {
@@ -206,6 +301,103 @@ export default function Settings() {
     }
   };
   
+  // Add event listener for location selection from map clicks
+  useEffect(() => {
+    const handleLocationSelected = (e) => {
+      console.log('⭐ locationSelected event received in Search component:', e.detail);
+      const location = e.detail;
+      setSelectedLocation(location);
+      setSearchQuery(location.name);
+      
+      // Không tự động tìm kiếm khi click vào map
+      // Chỉ cập nhật vị trí đã chọn
+      console.log('⭐ Location selected from map:', location);
+    };
+
+    // Log when the event listener is added
+    console.log('⭐ Adding locationSelected event listeners in Search component');
+    
+    // Listen on both window and document for maximum compatibility
+    window.addEventListener('locationSelected', handleLocationSelected);
+    document.addEventListener('locationSelected', handleLocationSelected);
+    
+    // Add listener on map element if it exists
+    const mapElement = document.getElementById('map');
+    if (mapElement) {
+      mapElement.addEventListener('locationSelected', handleLocationSelected);
+      console.log('⭐ Also listening for locationSelected events on map element');
+    } else {
+      console.log('🔴 Map element not found when adding event listener');
+    }
+    
+    return () => {
+      console.log('⭐ Removing locationSelected event listeners in Search component');
+      window.removeEventListener('locationSelected', handleLocationSelected);
+      document.removeEventListener('locationSelected', handleLocationSelected);
+      if (mapElement) {
+        mapElement.removeEventListener('locationSelected', handleLocationSelected);
+      }
+    };
+  }, []);
+
+  // Handle search input change with debouncing
+  const handleSearchInputChange = (e) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+
+    if (query.length < 3) {
+      setShowSuggestions(false);
+      setSearchSuggestions([]);
+      return;
+    }
+
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`
+        );
+        const data = await response.json();
+        setSearchSuggestions(data);
+        setShowSuggestions(true);
+      } catch (error) {
+        console.error('Error fetching suggestions:', error);
+        setShowSuggestions(false);
+      }
+    }, 300);
+  };
+
+  // Handle location suggestion selection
+  const handleSuggestionSelect = (place) => {
+    console.log('🔍 Suggestion selected:', place);
+    const location = {
+      lat: parseFloat(place.lat),
+      lng: parseFloat(place.lon),
+      name: place.display_name
+    };
+    
+    setSelectedLocation(location);
+    setSearchQuery(place.display_name);
+    setShowSuggestions(false);
+    
+    // Create a direct way to update the map position without relying on the ref methods
+    if (mapRef.current) {
+      // Check if the method exists before calling it
+      if (typeof mapRef.current.setLocationMarker === 'function') {
+        mapRef.current.setLocationMarker(location);
+      } else {
+        // Fallback: Use a custom event to communicate with the Map component
+        const customEvent = new CustomEvent('setLocation', { 
+          detail: location 
+        });
+        document.dispatchEvent(customEvent);
+      }
+    }
+  };
+  
   // Handle location form submission
   const handleLocationSubmit = async (e) => {
     e.preventDefault();
@@ -247,13 +439,16 @@ export default function Settings() {
     }
   };
   
-  // Handle map marker drag
+  // Handle marker drag
   const handleMarkerDrag = (lat, lng) => {
     setLocation(prev => ({
       ...prev,
       latitude: lat,
       longitude: lng
     }));
+    
+    // Reverse geocode to get location name
+    fetchLocationNameFromCoordinates(lat, lng);
   };
   
   // Handle map click
@@ -263,7 +458,92 @@ export default function Settings() {
       latitude: lat,
       longitude: lng
     }));
+    
+    // Reverse geocode to get location name
+    fetchLocationNameFromCoordinates(lat, lng);
   };
+  
+  // Fetch location name from coordinates using Nominatim
+  const fetchLocationNameFromCoordinates = async (lat, lng) => {
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch location details');
+      }
+      
+      const data = await response.json();
+      
+      if (data && data.display_name) {
+        // Create location object in the format expected by Map
+        const locationObj = {
+          lat: lat,
+          lng: lng,
+          name: data.display_name
+        };
+        
+        // Update location state
+        setLocation(prev => ({
+          ...prev,
+          name: data.display_name,
+          latitude: lat,
+          longitude: lng
+        }));
+        
+        // Update search query if we're in search mode
+        if (inputMethod === 'search') {
+          setSearchQuery(data.display_name);
+        }
+        
+        // Update map marker via map ref if available
+        if (mapRef.current && typeof mapRef.current.setLocationMarker === 'function') {
+          console.log('Updating marker via map ref after coordinates change');
+          mapRef.current.setLocationMarker(locationObj);
+        } else {
+          // Fallback to event-based approach
+          console.log('Updating marker via event after coordinates change');
+          const setLocationEvent = new CustomEvent('setLocation', {
+            detail: locationObj,
+            bubbles: true
+          });
+          document.dispatchEvent(setLocationEvent);
+        }
+        
+        console.log('Location updated from coordinates:', locationObj);
+      }
+    } catch (error) {
+      console.error('Error fetching location details:', error);
+    }
+  };
+  
+  // Update the useEffect for Map initialization
+  useEffect(() => {
+    // This effect runs once when the component mounts
+    if (mapRef.current && location.latitude && location.longitude) {
+      console.log('Setting initial map location when mapRef is ready');
+      
+      // Create location object in the format expected by the Map component
+      const locationObj = {
+        lat: location.latitude,
+        lng: location.longitude,
+        name: location.name || "Selected Location"
+      };
+      
+      // Try to use the direct method first if available
+      if (typeof mapRef.current.setLocationMarker === 'function') {
+        console.log('Using setLocationMarker method');
+        mapRef.current.setLocationMarker(locationObj);
+      } else {
+        // Fallback to event-based approach
+        console.log('Using setLocation event');
+        const setLocationEvent = new CustomEvent('setLocation', {
+          detail: locationObj,
+          bubbles: true
+        });
+        document.dispatchEvent(setLocationEvent);
+      }
+    }
+  }, [mapRef.current, location.latitude, location.longitude, location.name]); // Run when mapRef or location changes
   
   // Render the appropriate section based on activeSection
   const renderSection = () => {
@@ -346,113 +626,188 @@ export default function Settings() {
         return (
           <div className={styles.card}>
             <div className={styles.cardHeader}>
-              <i className="bi bi-geo-alt"></i> Add New Location
+              <i className="bi bi-geo-alt"></i> My Locations
             </div>
-            <div className={styles.cardBody}>
-              <form onSubmit={handleLocationSubmit}>
-                <div className="row">
-                  <div className="col-md-6">
-                    <div className={styles.formGroup}>
-                      <label htmlFor="locationName" className={styles.formLabel}>Location Name</label>
-                      <input
-                        type="text"
-                        id="locationName"
-                        className={styles.formControl}
-                        placeholder="Enter location name"
-                        value={location.name}
-                        onChange={(e) => setLocation({...location, name: e.target.value})}
-                        required
-                      />
+            <div className={styles.cardBody}>            
+              <div className="tab-content mt-3">
+                <div className="tab-pane fade show active" id="add-location">
+                  <form onSubmit={handleLocationSubmit}>
+                    <div className="row">
+                      <div className="col-lg-6">
+                        {/* Left column - Form inputs */}
+                        <div className={styles.locationFormCard}>
+                          <div className={styles.inputMethodSelector}>
+                            <div className="d-flex justify-content-between align-items-center mb-3">
+                              <h5 className="m-0">Add Location</h5>
+                              <div className={styles.switchContainer}>
+                                <div className={`${styles.switchOption} ${inputMethod === 'search' ? styles.active : ''}`} onClick={() => setInputMethod('search')}>
+                                  <i className="bi bi-search"></i> Search
+                                </div>
+                                <div className={`${styles.switchOption} ${inputMethod === 'coordinates' ? styles.active : ''}`} onClick={() => setInputMethod('coordinates')}>
+                                  <i className="bi bi-geo"></i> Coordinates
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {inputMethod === 'search' ? (
+                            <div className={styles.searchInputWrapper}>
+                              <label htmlFor="locationSearch" className={styles.formLabel}>
+                                <i className="bi bi-search"></i> Search Location
+                              </label>
+                              <div className={styles.searchInputContainer}>
+                                <input
+                                  ref={searchInputRef}
+                                  type="text"
+                                  id="location-search"
+                                  className={styles.searchInput}
+                                  placeholder="Enter location name (e.g. Ho Chi Minh City, Vietnam)"
+                                  value={searchQuery}
+                                  onChange={handleSearchInputChange}
+                                />
+                                {showSuggestions && suggestions.length > 0 && (
+                                  <div ref={suggestionsRef} className={styles.searchSuggestions}>
+                                    {suggestions.map((place, index) => (
+                                      <div
+                                        key={`${place.place_id}-${index}`}
+                                        className={styles.suggestionItem}
+                                        onClick={() => handleSuggestionSelect(place)}
+                                      >
+                                        {place.display_name}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className={styles.formGroup}>
+                                <label htmlFor="locationName" className={styles.formLabel}>Location Name</label>
+                                <input
+                                  type="text"
+                                  id="locationName"
+                                  className={styles.formControl}
+                                  placeholder="Enter location name"
+                                  value={location.name}
+                                  onChange={(e) => setLocation({...location, name: e.target.value})}
+                                  required
+                                />
+                              </div>
+                              <div className="row">
+                                <div className="col-md-6">
+                                  <div className={styles.formGroup}>
+                                    <label htmlFor="locationLatitude" className={styles.formLabel}>Latitude</label>
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      id="locationLatitude"
+                                      className={styles.formControl}
+                                      placeholder="e.g. 21.0278"
+                                      value={location.latitude}
+                                      onChange={(e) => setLocation({...location, latitude: parseFloat(e.target.value)})}
+                                      required
+                                    />
+                                  </div>
+                                </div>
+                                <div className="col-md-6">
+                                  <div className={styles.formGroup}>
+                                    <label htmlFor="locationLongitude" className={styles.formLabel}>Longitude</label>
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      id="locationLongitude"
+                                      className={styles.formControl}
+                                      placeholder="e.g. 105.8342"
+                                      value={location.longitude}
+                                      onChange={(e) => setLocation({...location, longitude: parseFloat(e.target.value)})}
+                                      required
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                          
+                          <div className={styles.formGroup}>
+                            <label htmlFor="locationCategory" className={styles.formLabel}>Category</label>
+                            <select
+                              id="locationCategory"
+                              className={styles.formControl}
+                              value={location.category}
+                              onChange={(e) => setLocation({...location, category: e.target.value})}
+                              required
+                            >
+                              <option value="">Select category</option>
+                              <option value="travel">Travel</option>
+                              <option value="restaurant">Restaurant</option>
+                              <option value="entertainment">Entertainment</option>
+                              <option value="sport">Sport</option>
+                              <option value="education">Education</option>
+                              <option value="shopping">Shopping</option>
+                              <option value="health">Health</option>
+                              <option value="business">Business</option>
+                              <option value="other">Other</option>
+                            </select>
+                          </div>
+                          
+                          <div className={styles.formGroup}>
+                            <label htmlFor="locationDescription" className={styles.formLabel}>Description</label>
+                            <textarea
+                              id="locationDescription"
+                              className={styles.formControl}
+                              rows="3"
+                              placeholder="Describe this location"
+                              value={location.description}
+                              onChange={(e) => setLocation({...location, description: e.target.value})}
+                            ></textarea>
+                          </div>
+                          
+                          <div className={styles.formActions}>
+                            <button type="submit" className={styles.buttonPrimary}>
+                              <i className="bi bi-plus-circle"></i> Add Location
+                            </button>
+                            <button type="button" className={styles.buttonOutline} onClick={() => {
+                              setLocation({
+                                name: '',
+                                category: '',
+                                latitude: 21.0278,
+                                longitude: 105.8342,
+                                description: ''
+                              });
+                              setSearchQuery('');
+                            }}>
+                              <i className="bi bi-x-circle"></i> Clear
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="col-lg-6">
+                        {/* Right column - Map */}
+                        <div className={styles.mapContainer}>
+                          <div className={styles.mapHeader}>
+                            <h5><i className="bi bi-pin-map"></i> Map View</h5>
+                            <div className={styles.coordinates}>
+                              <span>Lat: {location.latitude.toFixed(6)}</span>
+                              <span>Lng: {location.longitude.toFixed(6)}</span>
+                            </div>
+                          </div>
+                          <div className={styles.map}>
+                          <Map 
+                            ref={mapRef}
+                            onMapInitialized={handleMapInitialized}
+                          />
+                          </div>
+                          <div className={styles.mapHelp}>
+                            <i className="bi bi-info-circle"></i> Click on the map to set location or drag the marker to adjust position
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="col-md-6">
-                    <div className={styles.formGroup}>
-                      <label htmlFor="locationCategory" className={styles.formLabel}>Category</label>
-                      <select
-                        id="locationCategory"
-                        className={styles.formControl}
-                        value={location.category}
-                        onChange={(e) => setLocation({...location, category: e.target.value})}
-                        required
-                      >
-                        <option value="">Select category</option>
-                        <option value="travel">Travel</option>
-                        <option value="restaurant">Restaurant</option>
-                        <option value="entertainment">Entertainment</option>
-                        <option value="sport">Sport</option>
-                        <option value="education">Education</option>
-                      </select>
-                    </div>
-                  </div>
+                  </form>
                 </div>
-                
-                <div className="row">
-                  <div className="col-md-6">
-                    <div className={styles.formGroup}>
-                      <label htmlFor="locationLatitude" className={styles.formLabel}>Latitude</label>
-                      <input
-                        type="number"
-                        step="any"
-                        id="locationLatitude"
-                        className={styles.formControl}
-                        placeholder="e.g. 21.0278"
-                        value={location.latitude}
-                        onChange={(e) => setLocation({...location, latitude: parseFloat(e.target.value)})}
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div className="col-md-6">
-                    <div className={styles.formGroup}>
-                      <label htmlFor="locationLongitude" className={styles.formLabel}>Longitude</label>
-                      <input
-                        type="number"
-                        step="any"
-                        id="locationLongitude"
-                        className={styles.formControl}
-                        placeholder="e.g. 105.8342"
-                        value={location.longitude}
-                        onChange={(e) => setLocation({...location, longitude: parseFloat(e.target.value)})}
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-                
-                <div className={styles.formGroup}>
-                  <label htmlFor="locationDescription" className={styles.formLabel}>Description</label>
-                  <textarea
-                    id="locationDescription"
-                    className={styles.formControl}
-                    rows="3"
-                    placeholder="Describe this location"
-                    value={location.description}
-                    onChange={(e) => setLocation({...location, description: e.target.value})}
-                  ></textarea>
-                </div>
-                
-                <div className={styles.formGroup}>
-                  <div className={styles.map}>
-                    {activeSection === 'locations' && (
-                      <Map 
-                        center={[location.latitude, location.longitude]} 
-                        zoom={13}
-                        markers={[{ 
-                          position: [location.latitude, location.longitude],
-                          draggable: true,
-                          onDragEnd: handleMarkerDrag
-                        }]}
-                        onClick={handleMapClick}
-                      />
-                    )}
-                  </div>
-                  <small className="text-muted">You can also click on the map to set the coordinates</small>
-                </div>
-                
-                <button type="submit" className={styles.buttonPrimary}>
-                  <i className="bi bi-plus-circle"></i> Add Location
-                </button>
-              </form>
+              </div>
             </div>
           </div>
         );

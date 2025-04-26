@@ -120,6 +120,49 @@
   color: #2563eb;
 }
 
+.searchButtonsContainer {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.primaryButton, .secondaryButton {
+  padding: 0.875rem 1.5rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.primaryButton {
+  background-color: #2563eb;
+  color: white;
+}
+
+.primaryButton:hover {
+  background-color: #1d4ed8;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(37, 99, 235, 0.2);
+}
+
+.secondaryButton {
+  background-color: #f3f4f6;
+  color: #4b5563;
+  border: 1px solid #e5e7eb;
+}
+
+.secondaryButton:hover {
+  background-color: #e5e7eb;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+}
+
 .recommendButtons {
   display: flex;
   flex-wrap: wrap;
@@ -176,6 +219,7 @@
   grid-template-rows: 1fr auto;
   gap: 2rem;
   height: 75vh;
+  min-height: 600px;
 }
 
 .mapWrapper {
@@ -206,6 +250,7 @@
   display: flex;
   flex-direction: column;
   max-height: 400px;
+  overflow: hidden;
 }
 
 .resultsHeader {
@@ -241,6 +286,8 @@
   padding: 1.25rem 1.5rem;
   overflow-y: auto;
   flex: 1;
+  max-height: calc(100% - 60px);
+  height: 100%;
 }
 
 .noResults {
@@ -381,6 +428,11 @@
   .searchPanel {
     flex-direction: row;
     align-items: flex-end;
+  }
+  
+  .searchButtonsContainer {
+    margin-top: 0;
+    min-width: 300px;
   }
   
   .mapResultsContainer {
