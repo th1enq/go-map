@@ -195,6 +195,7 @@ export default function Search() {
         apiUrl = `/api/location/search/place?lat=${location.lat}&lng=${location.lng}&activity=${category}`;
       }
       
+      console.log('🔍 Fetching data from API:', apiUrl);
       const response = await fetch(apiUrl);
       const locations = await response.json();
       
@@ -202,14 +203,11 @@ export default function Search() {
         console.error('API Error:', locations.error);
         setLoading(false);
         setSearchResults([]);
-        if (category === 'all') {
-          setResultCount();
-        } else {
-          const categoryName = getCategoryDisplayName(category);
-          setResultCount();
-        }
+        setResultCount('Error fetching results');
         return;
       }
+      
+      console.log('🔍 API returned', locations.length, 'results');
       
       // Calculate distance for each location
       const locationsWithDistance = locations.map(loc => {
@@ -227,30 +225,60 @@ export default function Search() {
       
       if (locationsWithDistance.length === 0) {
         if (category === 'all') {
-          setResultCount();
+          setResultCount('No results found');
         } else {
           const categoryName = getCategoryDisplayName(category);
-          setResultCount();
+          setResultCount(`No results found for ${categoryName}`);
         }
       } else {
         if (category === 'all') {
-          setResultCount(`(${locationsWithDistance.length} results)`);
+          setResultCount(`Showing all (${locationsWithDistance.length} results)`);
         } else {
           const categoryName = getCategoryDisplayName(category);
-          setResultCount(`${locationsWithDistance.length} results)`);
+          setResultCount(`Showing ${categoryName} (${locationsWithDistance.length} results)`);
         }
       }
       
       setLoading(false);
       
-      // QUAN TRỌNG: Đảm bảo gọi searchNearbyPlaces của map để hiển thị markers
-      console.log('🔍 Calling map.searchNearbyPlaces with:', location, category);
-      if (mapRef.current && typeof mapRef.current.searchNearbyPlaces === 'function') {
-        // Cho phép map component xử lý kết quả để hiển thị markers
-        mapRef.current.searchNearbyPlaces(location, category);
+      // Try to update map markers using different approaches
+      console.log('🔍 Trying to display map markers...');
+      
+      // Approach 1: Try to use mapRef directly
+      if (mapRef.current) {
+        if (typeof mapRef.current.searchNearbyPlaces === 'function') {
+          console.log('🔍 Using mapRef.current.searchNearbyPlaces');
+          mapRef.current.searchNearbyPlaces(location, category);
+          return;
+        } else {
+          console.log('🔍 mapRef.current exists but searchNearbyPlaces method is missing');
+        }
       } else {
-        console.error('Map reference or searchNearbyPlaces method is not available!', mapRef.current);
+        console.log('🔍 mapRef.current is not available');
       }
+      
+      // Approach 2: As a fallback, dispatch a custom event
+      console.log('🔍 Using fallback method to show location markers');
+      const searchEvent = new CustomEvent('searchNearbyPlaces', { 
+        detail: { location, category, results: locationsWithDistance },
+        bubbles: true
+      });
+      document.dispatchEvent(searchEvent);
+      
+      // Approach 3: Also try to manually show each location marker 
+      // if individual marker method exists or via custom event
+      locationsWithDistance.forEach(location => {
+        if (mapRef.current && typeof mapRef.current.showLocationMarker === 'function') {
+          mapRef.current.showLocationMarker(location);
+        } else {
+          const event = new CustomEvent('showLocation', {
+            detail: location,
+            bubbles: true
+          });
+          document.dispatchEvent(event);
+        }
+      });
+      
     } catch (error) {
       console.error('Error searching for nearby places:', error);
       setLoading(false);
@@ -263,8 +291,8 @@ export default function Search() {
   const getDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Radius of the earth in km
     const dLat = deg2rad(lat2 - lat1);
-    const dLon = deg2rad(lat2 - lon1);
-    const a =
+    const dLon = deg2rad(lon2 - lon1);
+    const a = 
       Math.sin(dLat/2) * Math.sin(dLat/2) +
       Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
       Math.sin(dLon/2) * Math.sin(dLon/2); 
@@ -290,10 +318,10 @@ export default function Search() {
       }
     } else {
       if (category === 'all') {
-        setResultCount(`Showing all (${results.length} results)`);
+        setResultCount(`(${results.length} results)`);
       } else {
         const categoryName = getCategoryDisplayName(category);
-        setResultCount(`Showing ${categoryName} (${results.length} results)`);
+        setResultCount(`${results.length} results)`);
       }
     }
   };
@@ -314,8 +342,41 @@ export default function Search() {
 
   // Handle result item click
   const handleResultItemClick = (location) => {
-    if (mapRef.current) {
-      mapRef.current.focusLocationAndDrawRoute(selectedLocation, location);
+    if (!mapRef.current) {
+      console.log('🔴 Map reference not available');
+      return;
+    }
+    
+    try {
+      if (typeof mapRef.current.focusLocationAndDrawRoute === 'function') {
+        console.log('🌍 Calling focusLocationAndDrawRoute with:', selectedLocation, location);
+        mapRef.current.focusLocationAndDrawRoute(selectedLocation, location);
+      } else {
+        console.log('🌍 focusLocationAndDrawRoute not available, implementing fallback directly');
+        
+        // Direct fallback implementation
+        // 1. Focus on the end location
+        if (typeof mapRef.current.showLocationMarker === 'function') {
+          mapRef.current.showLocationMarker(location);
+        }
+        
+        // 2. If there's a custom method to get the selected location marker
+        const startLocation = mapRef.current.getSelectedLocation ? 
+          mapRef.current.getSelectedLocation() : 
+          selectedLocation;
+        
+        // 3. Create and dispatch a custom event as a last resort
+        const event = new CustomEvent('focusLocationAndDrawRoute', {
+          detail: { 
+            startLocation: startLocation, 
+            endLocation: location 
+          },
+          bubbles: true
+        });
+        document.dispatchEvent(event);
+      }
+    } catch (error) {
+      console.error('Error focusing location and drawing route:', error);
     }
   };
 
@@ -435,36 +496,6 @@ export default function Search() {
     setSelectedLocation(location);
     setSearchQuery(location.name);
   }, []);
-
-  // Add an effect to properly handle search results and display markers
-  useEffect(() => {
-    // Only proceed if we have search results and a valid map reference
-    if (searchResults.length > 0 && mapRef.current && selectedLocation) {
-      console.log('🌍 Handling search results in effect hook');
-      
-      // If the map has the searchNearbyPlaces method, let it handle displaying all markers at once
-      if (typeof mapRef.current.searchNearbyPlaces === 'function') {
-        mapRef.current.searchNearbyPlaces(selectedLocation, selectedCategory);
-      } 
-      // If we need to show individual markers, use showLocationMarker if available
-      else if (typeof mapRef.current.showLocationMarker === 'function') {
-        searchResults.forEach(location => {
-          mapRef.current.showLocationMarker(location);
-        });
-      } 
-      // Last resort: dispatch custom events for each location
-      else {
-        console.log('🔴 Using fallback method to show location markers');
-        searchResults.forEach(location => {
-          const event = new CustomEvent('showLocation', {
-            detail: location,
-            bubbles: true
-          });
-          document.dispatchEvent(event);
-        });
-      }
-    }
-  }, [searchResults, selectedLocation, selectedCategory]);
 
   // Add event listener for the showLocation custom event
   useEffect(() => {

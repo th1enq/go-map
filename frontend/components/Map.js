@@ -103,8 +103,12 @@ const Map = forwardRef(({ onSearchResultsUpdate, onMapInitialized }, ref) => {
           
           // Clear all existing markers
           if (selectedLocationMarkerRef.current) {
-            console.log('🌍 Removing old selected location marker');
-            mapInstance.removeLayer(selectedLocationMarkerRef.current);
+            try {
+              console.log('🌍 Removing selected location marker');
+              mapInstance.removeLayer(selectedLocationMarkerRef.current);
+            } catch (err) {
+              console.error('Error removing marker:', err);
+            }
             selectedLocationMarkerRef.current = null;
           }
           
@@ -239,8 +243,12 @@ const Map = forwardRef(({ onSearchResultsUpdate, onMapInitialized }, ref) => {
       
       // Clear all existing markers
       if (selectedLocationMarkerRef.current) {
-        console.log('🌍 Removing selected location marker');
-        map.removeLayer(selectedLocationMarkerRef.current);
+        try {
+          console.log('🌍 Removing selected location marker');
+          map.removeLayer(selectedLocationMarkerRef.current);
+        } catch (err) {
+          console.error('Error removing marker:', err);
+        }
         selectedLocationMarkerRef.current = null;
       }
       
@@ -337,8 +345,12 @@ const Map = forwardRef(({ onSearchResultsUpdate, onMapInitialized }, ref) => {
       
       // Clear all existing markers
       if (selectedLocationMarkerRef.current) {
-        console.log('🌍 Removing selected location marker');
-        map.removeLayer(selectedLocationMarkerRef.current);
+        try {
+          console.log('🌍 Removing selected location marker');
+          map.removeLayer(selectedLocationMarkerRef.current);
+        } catch (err) {
+          console.error('Error removing marker:', err);
+        }
         selectedLocationMarkerRef.current = null;
       }
       
@@ -427,6 +439,91 @@ const Map = forwardRef(({ onSearchResultsUpdate, onMapInitialized }, ref) => {
     };
   }, [map, leaflet]);
 
+  // Add event listener for the searchNearbyPlaces custom event
+  useEffect(() => {
+    if (!map || !leaflet) return;
+
+    const handleSearchNearbyPlaces = (e) => {
+      console.log('🌍 searchNearbyPlaces event received:', e.detail);
+      const { location, category, results } = e.detail;
+      
+      if (!map) {
+        console.log('🔴 Map instance not available');
+        return;
+      }
+      
+      // Clear all existing markers
+      if (selectedLocationMarkerRef.current) {
+        try {
+          console.log('🌍 Removing selected location marker');
+          map.removeLayer(selectedLocationMarkerRef.current);
+        } catch (err) {
+          console.error('Error removing marker:', err);
+        }
+        selectedLocationMarkerRef.current = null;
+      }
+      
+      if (currentLocationMarkerRef.current) {
+        console.log('🌍 Removing current location marker');
+        map.removeLayer(currentLocationMarkerRef.current);
+        currentLocationMarkerRef.current = null;
+      }
+      
+      if (searchMarkersRef.current.length > 0) {
+        console.log('🌍 Removing search result markers');
+        searchMarkersRef.current.forEach(marker => {
+          map.removeLayer(marker);
+        });
+        searchMarkersRef.current = [];
+      }
+      
+      // Create new markers for all search results
+      const newMarkers = [];
+      
+      results.forEach((loc, index) => {
+        const poiIcon = createPoiIcon(index);
+        
+        const marker = leaflet.marker([loc.latitude, loc.longitude], {
+          icon: poiIcon
+        })
+          .addTo(map)
+          .bindPopup(`
+            <div style="max-width: 250px;">
+              <strong style="font-size: 14px;">${loc.name}</strong><br>
+              ${loc.category ? `<span style="color: #666;"><strong>Type:</strong> ${loc.category}</span><br>` : ''}
+              ${loc.tag ? `<span style="color: #666;"><strong>Category:</strong> ${loc.tag}</span><br>` : ''}
+              ${loc.activities ? `<span style="color: #666;"><strong>Activities:</strong> ${loc.activities.join(', ')}</span><br>` : ''}
+              <span style="color: #2563eb; font-weight: bold; font-size: 13px;">Distance: ${(loc.distance * 1000).toFixed(0)}m</span>
+            </div>
+          `);
+        
+        newMarkers.push(marker);
+      });
+      
+      searchMarkersRef.current = newMarkers;
+      
+      // Adjust map to show all markers
+      if (results.length > 0) {
+        const points = [
+          [location.lat, location.lng],
+          ...results.map(loc => [loc.latitude, loc.longitude])
+        ];
+        const bounds = leaflet.latLngBounds(points);
+        map.fitBounds(bounds, { padding: [50, 50] });
+      }
+      
+      // Call the callback to update parent component with results
+      if (onSearchResultsUpdate) {
+        onSearchResultsUpdate(results, category);
+      }
+    };
+
+    document.addEventListener('searchNearbyPlaces', handleSearchNearbyPlaces);
+    return () => {
+      document.removeEventListener('searchNearbyPlaces', handleSearchNearbyPlaces);
+    };
+  }, [map, leaflet, onSearchResultsUpdate]);
+
   // Create a POI icon for search results
   const createPoiIcon = (index) => {
     if (!leaflet) return null;
@@ -503,8 +600,12 @@ const Map = forwardRef(({ onSearchResultsUpdate, onMapInitialized }, ref) => {
         
         // Clear all existing markers
         if (selectedLocationMarkerRef.current) {
-          console.log('🌍 Removing selected location marker');
-          map.removeLayer(selectedLocationMarkerRef.current);
+          try {
+            console.log('🌍 Removing selected location marker');
+            map.removeLayer(selectedLocationMarkerRef.current);
+          } catch (err) {
+            console.error('Error removing marker:', err);
+          }
           selectedLocationMarkerRef.current = null;
         }
         
@@ -595,8 +696,12 @@ const Map = forwardRef(({ onSearchResultsUpdate, onMapInitialized }, ref) => {
         
         // Clear all existing markers
         if (selectedLocationMarkerRef.current) {
-          console.log('🌍 Removing selected location marker');
-          map.removeLayer(selectedLocationMarkerRef.current);
+          try {
+            console.log('🌍 Removing selected location marker');
+            map.removeLayer(selectedLocationMarkerRef.current);
+          } catch (err) {
+            console.error('Error removing marker:', err);
+          }
           selectedLocationMarkerRef.current = null;
         }
         
@@ -681,21 +786,9 @@ const Map = forwardRef(({ onSearchResultsUpdate, onMapInitialized }, ref) => {
         if (!map || !location) return;
         
         try {
-          // Clear all existing markers
-          if (selectedLocationMarkerRef.current) {
-            console.log('🌍 Removing selected location marker');
-            map.removeLayer(selectedLocationMarkerRef.current);
-            selectedLocationMarkerRef.current = null;
-          }
-          
-          if (currentLocationMarkerRef.current) {
-            console.log('🌍 Removing current location marker');
-            map.removeLayer(currentLocationMarkerRef.current);
-            currentLocationMarkerRef.current = null;
-          }
-          
+          // Only clear previous search result markers, keep selected/current location markers
           if (searchMarkersRef.current.length > 0) {
-            console.log('🌍 Removing search result markers');
+            console.log('🌍 Removing previous search result markers');
             searchMarkersRef.current.forEach(marker => {
               map.removeLayer(marker);
             });
@@ -763,12 +856,13 @@ const Map = forwardRef(({ onSearchResultsUpdate, onMapInitialized }, ref) => {
           
           searchMarkersRef.current = newMarkers;
           
-          // Adjust map to show all markers
+          // Adjust map to show all markers including the selected location marker
           if (locationsWithDistance.length > 0) {
-            const points = [
+            let points = [
               [location.lat, location.lng],
               ...locationsWithDistance.map(loc => [loc.latitude, loc.longitude])
             ];
+            
             const bounds = leaflet.latLngBounds(points);
             map.fitBounds(bounds, { padding: [50, 50] });
           }
@@ -852,7 +946,7 @@ const Map = forwardRef(({ onSearchResultsUpdate, onMapInitialized }, ref) => {
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Radius of the earth in km
     const dLat = deg2rad(lat2 - lat1);
-    const dLon = deg2rad(lon1 - lon2);
+    const dLon = deg2rad(lat1 - lon2);
     const a = 
       Math.sin(dLat/2) * Math.sin(dLat/2) +
       Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
