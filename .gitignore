@@ -1,3 +1,9 @@
 .vscode
 .env
 dataset/
+
+frontend/.next/
+frontend/node_modules/
+frontend/package-lock.json
+frontend/package.json
+

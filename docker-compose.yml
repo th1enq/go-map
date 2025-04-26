@@ -9,4 +9,4 @@ services:
       - "5432:5432"
     volumes:
       - /var/lib/postgresql/data
-      
+  

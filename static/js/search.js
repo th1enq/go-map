@@ -333,16 +333,24 @@ document.addEventListener('DOMContentLoaded', function() {
             const lat = e.latlng.lat;
             const lng = e.latlng.lng;
             
-            if (window.mapFunctions?.clearCurrentRoute) {
-                window.mapFunctions.clearCurrentRoute();
+            // Thêm console log với prefix rõ ràng để dễ nhận biết
+            console.warn('🗺️ MAP CLICK EVENT:', { lat, lng });
+            
+            // Thêm alert để kiểm tra xem sự kiện có được kích hoạt không
+            // alert(`Clicked on map at position: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+            
+            // Clear current route if there is one
+            if (window.currentRoute) {
+                searchMap.removeLayer(window.currentRoute);
+                window.currentRoute = null;
             }
             
-            // Create a custom marker icon for selected location
+            // Create a custom marker icon for selected location with more visible and attractive design
             const selectedLocationIcon = L.divIcon({
                 className: 'selected-location-marker',
-                html: '<div style="background-color: #007AFF; width: 22px; height: 22px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.5);"></div>',
-                iconSize: [22, 22],
-                iconAnchor: [11, 11]
+                html: '<div style="background-color: #FF3B30; width: 24px; height: 24px; border-radius: 50%; border: 4px solid white; box-shadow: 0 0 8px rgba(0,0,0,0.5);"></div>',
+                iconSize: [24, 24],
+                iconAnchor: [12, 12]
             });
             
             // Remove existing selected location marker if any
@@ -352,44 +360,91 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Add temporary marker while we wait for geocoding
             window.selectedLocationMarker = L.marker([lat, lng], { 
-                icon: selectedLocationIcon
+                icon: selectedLocationIcon,
+                zIndexOffset: 1000 // Đảm bảo marker này hiển thị phía trên các marker khác
             })
             .addTo(searchMap)
-            .bindPopup("Đang tìm thông tin địa điểm...")
+            .bindPopup("<div style='text-align: center; font-weight: bold;'>Đang tìm thông tin địa điểm...</div>")
             .openPopup();
             
-            // Reverse geocode using Nominatim
+            // Cập nhật selectedLocation ngay lập tức với vị trí tạm thời
+            selectedLocation = {
+                lat: lat,
+                lng: lng,
+                name: `Vị trí (${lat.toFixed(6)}, ${lng.toFixed(6)})`
+            };
+            
+            // Log selectedLocation để kiểm tra
+            console.warn('🗺️ Selected location updated:', selectedLocation);
+            
+            // Cập nhật input search với vị trí tạm thời
+            if (searchInput) {
+                searchInput.value = selectedLocation.name;
+                console.log('🗺️ Search input updated with:', selectedLocation.name);
+            }
+            
+            // Thực hiện reverse geocoding để lấy thông tin địa điểm
             fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
                 .then(response => response.json())
                 .then(data => {
+                    // Cập nhật thông tin địa điểm khi có kết quả geocoding
                     selectedLocation = {
                         lat: lat,
                         lng: lng,
-                        name: data.display_name
+                        name: data.display_name || `Vị trí (${lat.toFixed(6)}, ${lng.toFixed(6)})`
                     };
-                    if (searchInput) {
-                        searchInput.value = data.display_name;
-                    }
                     
-                    // Update marker popup with location name
-                    if (window.selectedLocationMarker) {
-                        window.selectedLocationMarker.setPopupContent(data.display_name || 'Vị trí đã chọn');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error reverse geocoding:', error);
-                    selectedLocation = {
-                        lat: lat,
-                        lng: lng,
-                        name: `Vị trí (${lat.toFixed(6)}, ${lng.toFixed(6)})`
-                    };
+                    // Cập nhật input search
                     if (searchInput) {
                         searchInput.value = selectedLocation.name;
                     }
                     
-                    // Update marker popup with fallback location name
+                    // Cập nhật nội dung popup với thông tin chi tiết hơn
                     if (window.selectedLocationMarker) {
-                        window.selectedLocationMarker.setPopupContent(selectedLocation.name || 'Vị trí đã chọn');
+                        window.selectedLocationMarker.setPopupContent(`
+                            <div style="max-width: 250px; text-align: center;">
+                                <strong style="font-size: 14px; color: #333;">${selectedLocation.name}</strong>
+                                <br>
+                                <span style="font-size: 12px; color: #666;">
+                                    ${lat.toFixed(6)}, ${lng.toFixed(6)}
+                                </span>
+                                <br>
+                                <button 
+                                    onclick="searchFunctions.SearchPlaces()" 
+                                    style="margin-top: 8px; background-color: #007AFF; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;"
+                                >
+                                    Tìm địa điểm gần đây
+                                </button>
+                            </div>
+                        `);
+                        window.selectedLocationMarker.openPopup();
+                    }
+                    
+                    // Trigger search nếu cần
+                    // SearchPlaces(); // Uncomment nếu muốn tự động tìm kiếm sau khi click
+                })
+                .catch(error => {
+                    console.error('Error reverse geocoding:', error);
+                    
+                    // Giữ lại thông tin vị trí tạm thời nếu geocoding thất bại
+                    if (window.selectedLocationMarker) {
+                        window.selectedLocationMarker.setPopupContent(`
+                            <div style="max-width: 250px; text-align: center;">
+                                <strong style="font-size: 14px; color: #333;">${selectedLocation.name}</strong>
+                                <br>
+                                <span style="font-size: 12px; color: #666;">
+                                    Không thể lấy thông tin chi tiết địa điểm
+                                </span>
+                                <br>
+                                <button 
+                                    onclick="searchFunctions.SearchPlaces()" 
+                                    style="margin-top: 8px; background-color: #007AFF; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;"
+                                >
+                                    Tìm địa điểm gần đây
+                                </button>
+                            </div>
+                        `);
+                        window.selectedLocationMarker.openPopup();
                     }
                 });
         });

@@ -13,36 +13,8 @@ import (
 func SetupNewRouter(db *db.DB, JwtSescret string) *gin.Engine {
 	router := gin.Default()
 
-	router.Static("/static", "./static")
-
-	router.LoadHTMLGlob("templates/*")
-
-	router.GET("/", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "index.html", nil)
-	})
-
-	router.GET("/search", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "search.html", nil)
-	})
-
-	router.GET("/recommend", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "recommend.html", nil)
-	})
-
-	router.GET("/login", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "login.html", nil)
-	})
-
-	router.GET("/register", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "register.html", nil)
-	})
-
+	router.Use(middleware.Cors)
 	authService := services.NewAuthService(db.DB, JwtSescret)
-
-	// Add settings page route
-	router.GET("/settings", middleware.JWTAuth(authService), func(c *gin.Context) {
-		c.HTML(http.StatusOK, "settings.html", nil)
-	})
 
 	findServices := services.NewFindServices()
 
